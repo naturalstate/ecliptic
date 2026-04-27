@@ -66,6 +66,8 @@ import androidx.compose.material.icons.filled.TableRows
 import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.VerticalAlignTop
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Shield
@@ -104,11 +106,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.content.res.Configuration
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -223,6 +228,9 @@ fun PocScanScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val haptic = LocalHapticFeedback.current
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     val state by viewModel.state.collectAsStateWithLifecycle()
     val urlInput = state.urlInput
     val scanning = state.isScanning
@@ -237,18 +245,24 @@ fun PocScanScreen(
     val scanStage = state.scanStage
     val repeaterResponse = state.repeaterResponse
     val isSendingRequest = state.isSendingRequest
+    val wizardMethod = state.wizardMethod
+    val wizardUrl = state.wizardUrl
+    val wizardHeaders = state.wizardHeaders
+    val wizardBody = state.wizardBody
+    val wizardSent = state.wizardSent
 
     var bottomTab    by remember { mutableIntStateOf(TAB_TECH) }
     var intelSubTab  by remember { mutableIntStateOf(0) }   // 0=HEADERS 1=COOKIES 2=NETWORK
     var codeSubTab   by remember { mutableIntStateOf(0) }   // 0=SOURCE  1=JS      2=DOM
     var showSettings by remember { mutableStateOf(false) }
     var selectedTech by remember { mutableStateOf<Technology?>(null) }
+    var isFullScreen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val webView = remember { WebView(context).also { configureWebView(it) } }
     DisposableEffect(Unit) { onDispose { webView.destroy() } }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(initialUrl) {
         if (initialUrl != null) viewModel.onUrlChanged(initialUrl)
     }
     LaunchedEffect(scanning) {
@@ -313,115 +327,122 @@ fun PocScanScreen(
     ) {
         AndroidView(factory = { webView }, modifier = Modifier.fillMaxWidth().height(1.dp))
 
-        // ── Compact header ────────────────────────────────────────────────────
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 20.dp, end = 4.dp, top = 14.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            // Wordmark
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                // Teal diamond accent
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .graphicsLayer(rotationZ = 45f)
-                        .background(Teal, RoundedCornerShape(1.5.dp))
-                )
-                Text(
-                    text = "ECLIPTIC",
-                    style = TextStyle(
-                        fontFamily = SpaceGrotesk,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
-                        letterSpacing = 0.18.em,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    ),
-                )
-            }
-            // Actions
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (hasScanned && !scanning) {
-                    IconButton(onClick = { shareResults() }, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Filled.Share, "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                    }
-                    IconButton(onClick = { viewModel.onNewScan(); bottomTab = TAB_TECH }, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Filled.Add, "New scan", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                    }
+        // ── Compact header (hidden in fullscreen or landscape) ────────────────
+        if (!isFullScreen && !isLandscape) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 4.dp, top = 14.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .graphicsLayer(rotationZ = 45f)
+                            .background(Teal, RoundedCornerShape(1.5.dp))
+                    )
+                    Text(
+                        text = "ECLIPTIC",
+                        style = TextStyle(
+                            fontFamily = SpaceGrotesk,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            letterSpacing = 0.18.em,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        ),
+                    )
                 }
-                IconButton(onClick = { showSettings = true }, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Filled.Settings, "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (hasScanned && !scanning) {
+                        IconButton(onClick = { shareResults() }, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Filled.Share, "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = { viewModel.onNewScan(); bottomTab = TAB_TECH }, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Filled.Add, "New scan", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    IconButton(onClick = { showSettings = true }, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Filled.Settings, "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
         }
 
-        // ── URL input ─────────────────────────────────────────────────────────
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = urlInput,
-                onValueChange = { viewModel.onUrlChanged(it) },
-                modifier = Modifier.weight(1f),
-                label = { Text("URL", fontFamily = SpaceGrotesk) },
-                singleLine = true,
-                enabled = !scanning,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
-                keyboardActions = KeyboardActions(onGo = { scan() }),
-                trailingIcon = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (urlInput.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.onUrlChanged("") }, enabled = !scanning, modifier = Modifier.size(36.dp)) {
-                                Icon(Icons.Filled.Close, "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+        // ── URL input (hidden in fullscreen) ──────────────────────────────────
+        if (!isFullScreen) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = 16.dp, end = 16.dp,
+                        top = if (isLandscape) 6.dp else 0.dp,
+                        bottom = if (isLandscape) 4.dp else 0.dp,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                OutlinedTextField(
+                    value = urlInput,
+                    onValueChange = { viewModel.onUrlChanged(it) },
+                    modifier = Modifier.weight(1f),
+                    label = { Text("URL", fontFamily = SpaceGrotesk) },
+                    singleLine = true,
+                    enabled = !scanning,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { scan() }),
+                    trailingIcon = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (urlInput.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.onUrlChanged("") }, enabled = !scanning, modifier = Modifier.size(36.dp)) {
+                                    Icon(Icons.Filled.Close, "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+                                }
+                            }
+                            IconButton(onClick = { paste() }, enabled = !scanning, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Filled.ContentPaste, "Paste", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
                             }
                         }
-                        IconButton(onClick = { paste() }, enabled = !scanning, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Filled.ContentPaste, "Paste", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
-                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = Teal,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedLabelColor = Teal,
+                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        cursorColor = Teal,
+                        disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledContainerColor = MaterialTheme.colorScheme.surface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    textStyle = TextStyle(fontFamily = SpaceGrotesk, fontSize = 14.sp),
+                )
+                Button(
+                    onClick = { scan() },
+                    enabled = !scanning,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Teal, contentColor = Navy,
+                        disabledContainerColor = MaterialTheme.colorScheme.surface,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.height(56.dp).padding(bottom = 1.dp),
+                ) {
+                    if (scanning) {
+                        CircularProgressIndicator(modifier = Modifier.size(17.dp), color = Navy, strokeWidth = 2.dp)
+                    } else {
+                        Text("SCAN", fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, letterSpacing = 0.08.em, fontSize = 13.sp)
                     }
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = MaterialTheme.colorScheme.onBackground,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = Teal,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    focusedLabelColor = Teal,
-                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    cursorColor = Teal,
-                    disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    disabledContainerColor = MaterialTheme.colorScheme.surface,
-                    disabledBorderColor = MaterialTheme.colorScheme.outline,
-                ),
-                shape = RoundedCornerShape(10.dp),
-                textStyle = TextStyle(fontFamily = SpaceGrotesk, fontSize = 14.sp),
-            )
-            Button(
-                onClick = { scan() },
-                enabled = !scanning,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Teal, contentColor = Navy,
-                    disabledContainerColor = MaterialTheme.colorScheme.surface,
-                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.height(56.dp),
-            ) {
-                if (scanning) {
-                    CircularProgressIndicator(modifier = Modifier.size(17.dp), color = Navy, strokeWidth = 2.dp)
-                } else {
-                    Text("SCAN", fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, letterSpacing = 0.08.em, fontSize = 13.sp)
                 }
             }
         }
 
-        // ── Sub-tab chips (INTEL / CODE only) ─────────────────────────────────
-        if (hasScanned && !scanning && (bottomTab == TAB_INTEL || bottomTab == TAB_CODE)) {
+        // ── Sub-tab chips (INTEL / CODE only, hidden in fullscreen) ──────────
+        if (!isFullScreen && hasScanned && !scanning && (bottomTab == TAB_INTEL || bottomTab == TAB_CODE)) {
             val subLabels = if (bottomTab == TAB_INTEL) listOf("HEADERS", "COOKIES", "NETWORK")
                             else listOf("SOURCE", "JS", "DOM")
             val currentSub = if (bottomTab == TAB_INTEL) intelSubTab else codeSubTab
@@ -449,11 +470,12 @@ fun PocScanScreen(
                     }
                 }
             }
-        } else {
+        } else if (!isFullScreen) {
             Spacer(modifier = Modifier.height(8.dp))
         }
 
         // ── Content area ──────────────────────────────────────────────────────
+        val canExpand = bottomTab == TAB_REPEAT || (bottomTab == TAB_CODE && codeSubTab != 1)
         PullToRefreshBox(
             isRefreshing = scanning && hasScanned && bottomTab != TAB_REPEAT,
             onRefresh = { if (!scanning && bottomTab != TAB_REPEAT) scan() },
@@ -470,15 +492,28 @@ fun PocScanScreen(
                         rawRequest = rawRequest,
                         isRepeaterWizard = isRepeaterWizard,
                         urlInput = urlInput,
-                        signals = signals,
                         repeaterResponse = repeaterResponse,
                         isSendingRequest = isSendingRequest,
+                        wizardMethod = wizardMethod,
+                        wizardUrl = wizardUrl,
+                        wizardHeaders = wizardHeaders,
+                        wizardBody = wizardBody,
+                        wizardSent = wizardSent,
+                        isFullScreen = isFullScreen,
                         buildTemplate = { viewModel.buildTemplateForUrl(urlInput, httpMethod) },
                         onRawRequestChanged = { viewModel.onRawRequestChanged(it) },
                         onToggleRepeaterMode = { viewModel.onToggleRepeaterMode() },
                         onSendRaw = { viewModel.sendRepeaterRequest(it) },
                         onSendParts = { m, u, h, b -> viewModel.sendRepeaterRequestFromParts(m, u, h, b) },
                         onRepeaterReset = { viewModel.onRepeaterReset() },
+                        onWizardMethodChanged = { viewModel.onWizardMethodChanged(it) },
+                        onWizardUrlChanged = { viewModel.onWizardUrlChanged(it) },
+                        onWizardHeaderAdd = { k, v -> viewModel.onWizardHeaderAdd(k, v) },
+                        onWizardHeaderRemove = { viewModel.onWizardHeaderRemove(it) },
+                        onWizardHeaderValueChanged = { i, v -> viewModel.onWizardHeaderValueChanged(i, v) },
+                        onWizardBodyChanged = { viewModel.onWizardBodyChanged(it) },
+                        onWizardSentChanged = { viewModel.onWizardSentChanged(it) },
+                        onToggleFullScreen = { isFullScreen = !isFullScreen },
                     )
                     "loading" -> LoadingState(stage = scanStage)
                     "empty"   -> EmptyState()
@@ -486,58 +521,60 @@ fun PocScanScreen(
                     "intel_0" -> HeadersContent(requestHeaders = signals?.requestHeaders ?: emptyMap(), responseHeaders = signals?.headers ?: emptyMap())
                     "intel_1" -> CookiesContent(cookies = signals?.cookies ?: emptyMap())
                     "intel_2" -> NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls)
-                    "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList())
+                    "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_1"  -> JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap())
-                    "code_2"  -> DomContent(domTreeJson = signals?.domTree ?: "")
+                    "code_2"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     else      -> Box(modifier = Modifier.fillMaxSize())
                 }
             }
         }
 
-        // ── Bottom navigation ─────────────────────────────────────────────────
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
-        NavigationBar(
-            containerColor = MaterialTheme.colorScheme.background,
-            tonalElevation = 0.dp,
-        ) {
-            val techBadge = techs.size.takeIf { hasScanned && it > 0 }
-            val intelBadge = (signals?.headers?.filterKeys { it != "_status" && it != "_header_error" }?.size ?: 0)
-                .takeIf { hasScanned && it > 0 }
+        // ── Bottom navigation (hidden in fullscreen) ──────────────────────────
+        if (!isFullScreen) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.background,
+                tonalElevation = 0.dp,
+            ) {
+                val techBadge = techs.size.takeIf { hasScanned && it > 0 }
+                val intelBadge = (signals?.headers?.filterKeys { it != "_status" && it != "_header_error" }?.size ?: 0)
+                    .takeIf { hasScanned && it > 0 }
 
-            listOf(
-                Triple(TAB_TECH,   Icons.Filled.Layers,   "Tech"),
-                Triple(TAB_INTEL,  Icons.Filled.Shield,   "Intel"),
-                Triple(TAB_CODE,   Icons.Filled.Code,     "Code"),
-                Triple(TAB_REPEAT, Icons.AutoMirrored.Filled.Send, "Repeat"),
-            ).forEach { (idx, icon, label) ->
-                val badge = when (idx) { TAB_TECH -> techBadge; TAB_INTEL -> intelBadge; else -> null }
-                NavigationBarItem(
-                    selected = bottomTab == idx,
-                    onClick = { bottomTab = idx },
-                    icon = {
-                        if (badge != null) {
-                            BadgedBox(badge = {
-                                Badge(containerColor = Teal, contentColor = Navy) {
-                                    Text("$badge", fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                listOf(
+                    Triple(TAB_TECH,   Icons.Filled.Layers,   "Tech"),
+                    Triple(TAB_INTEL,  Icons.Filled.Shield,   "Intel"),
+                    Triple(TAB_CODE,   Icons.Filled.Code,     "Code"),
+                    Triple(TAB_REPEAT, Icons.AutoMirrored.Filled.Send, "Repeat"),
+                ).forEach { (idx, icon, label) ->
+                    val badge = when (idx) { TAB_TECH -> techBadge; TAB_INTEL -> intelBadge; else -> null }
+                    NavigationBarItem(
+                        selected = bottomTab == idx,
+                        onClick = { bottomTab = idx },
+                        icon = {
+                            if (badge != null) {
+                                BadgedBox(badge = {
+                                    Badge(containerColor = Teal, contentColor = Navy) {
+                                        Text("$badge", fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }) {
+                                    Icon(icon, label, modifier = Modifier.size(22.dp))
                                 }
-                            }) {
+                            } else {
                                 Icon(icon, label, modifier = Modifier.size(22.dp))
                             }
-                        } else {
-                            Icon(icon, label, modifier = Modifier.size(22.dp))
-                        }
-                    },
-                    label = {
-                        Text(label, fontFamily = SpaceGrotesk, fontSize = 10.sp, fontWeight = if (bottomTab == idx) FontWeight.SemiBold else FontWeight.Normal)
-                    },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Teal,
-                        selectedTextColor = Teal,
-                        indicatorColor = Teal.copy(alpha = 0.12f),
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                )
+                        },
+                        label = {
+                            Text(label, fontFamily = SpaceGrotesk, fontSize = 10.sp, fontWeight = if (bottomTab == idx) FontWeight.SemiBold else FontWeight.Normal)
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Teal,
+                            selectedTextColor = Teal,
+                            indicatorColor = Teal.copy(alpha = 0.12f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
             }
         }
     }
@@ -1388,6 +1425,8 @@ private fun SourceContent(
     html: String,
     scriptUrls: List<String> = emptyList(),
     cssUrls: List<String> = emptyList(),
+    isFullScreen: Boolean = false,
+    onToggleFullScreen: () -> Unit = {},
 ) {
     var selectedFile by remember { mutableStateOf("__html__") }
     var remoteContents by remember { mutableStateOf(mapOf<String, String>()) }
@@ -1511,6 +1550,14 @@ private fun SourceContent(
                 }
             } else if (searchQuery.length >= 2) {
                 Text("No results", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+            IconButton(onClick = onToggleFullScreen, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    if (isFullScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                    if (isFullScreen) "Exit fullscreen" else "Fullscreen",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
 
@@ -2048,7 +2095,7 @@ private fun flattenDom(node: DomNode, expandedIds: Set<Int>, depth: Int = 0): Li
 }
 
 @Composable
-private fun DomContent(domTreeJson: String) {
+private fun DomContent(domTreeJson: String, isFullScreen: Boolean = false, onToggleFullScreen: () -> Unit = {}) {
     if (domTreeJson.isBlank()) {
         Box(Modifier.fillMaxSize(), Alignment.Center) {
             Text("DOM tree not captured — rescan to populate", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
@@ -2079,7 +2126,7 @@ private fun DomContent(domTreeJson: String) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("DOM TREE", color = Teal, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
                         onClick = { expandedIds = buildSet { fun addAll(n: DomNode) { add(n.nodeId); n.children.forEach { addAll(it) } }; addAll(root) } },
                         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
@@ -2088,6 +2135,14 @@ private fun DomContent(domTreeJson: String) {
                         onClick = { expandedIds = emptySet() },
                         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                     ) { Text("Collapse all", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) }
+                    IconButton(onClick = onToggleFullScreen, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            if (isFullScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                            if (isFullScreen) "Exit fullscreen" else "Fullscreen",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
         }
@@ -2156,29 +2211,33 @@ private fun RepeaterContent(
     rawRequest: String,
     isRepeaterWizard: Boolean,
     urlInput: String,
-    signals: RawSignals?,
     repeaterResponse: RepeaterResponse?,
     isSendingRequest: Boolean,
+    wizardMethod: String,
+    wizardUrl: String,
+    wizardHeaders: List<Pair<String, String>>,
+    wizardBody: String,
+    wizardSent: Boolean,
+    isFullScreen: Boolean,
     buildTemplate: () -> String,
     onRawRequestChanged: (String) -> Unit,
     onToggleRepeaterMode: () -> Unit,
     onSendRaw: (String) -> Unit,
     onSendParts: (String, String, Map<String, String>, String) -> Unit,
     onRepeaterReset: () -> Unit,
+    onWizardMethodChanged: (String) -> Unit,
+    onWizardUrlChanged: (String) -> Unit,
+    onWizardHeaderAdd: (String, String) -> Unit,
+    onWizardHeaderRemove: (Int) -> Unit,
+    onWizardHeaderValueChanged: (Int, String) -> Unit,
+    onWizardBodyChanged: (String) -> Unit,
+    onWizardSentChanged: (Boolean) -> Unit,
+    onToggleFullScreen: () -> Unit,
 ) {
     LaunchedEffect(Unit) {
         if (rawRequest.isBlank()) onRawRequestChanged(buildTemplate())
     }
 
-    // Wizard local state — resets when signals change (new scan)
-    var wizardMethod by remember(signals) { mutableStateOf(signals?.requestHeaders?.get("method") ?: "GET") }
-    var wizardUrl by remember(signals) { mutableStateOf(signals?.finalUrl ?: urlInput) }
-    var wizardHeaders by remember(signals) {
-        val rh = signals?.requestHeaders ?: emptyMap()
-        mutableStateOf(rh.entries.map { it.key to it.value })
-    }
-    var wizardBody by remember(signals) { mutableStateOf("") }
-    var wizardSent by remember(signals) { mutableStateOf(false) }
     var wizardNewKey by remember { mutableStateOf("") }
     var wizardNewValue by remember { mutableStateOf("") }
 
@@ -2206,6 +2265,15 @@ private fun RepeaterContent(
                         letterSpacing = 0.07.em,
                     )
                 }
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onToggleFullScreen, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    if (isFullScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                    if (isFullScreen) "Exit fullscreen" else "Fullscreen",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
 
@@ -2262,7 +2330,7 @@ private fun RepeaterContent(
                             Text("URL", color = Teal, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
                             OutlinedTextField(
                                 value = wizardUrl,
-                                onValueChange = { wizardUrl = it },
+                                onValueChange = onWizardUrlChanged,
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
                                 colors = tfColors,
@@ -2279,7 +2347,7 @@ private fun RepeaterContent(
                                 items(listOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")) { m ->
                                     val sel = wizardMethod == m
                                     Surface(
-                                        onClick = { wizardMethod = m },
+                                        onClick = { onWizardMethodChanged(m) },
                                         shape = RoundedCornerShape(8.dp),
                                         color = if (sel) Teal.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
                                         border = BorderStroke(1.dp, if (sel) Teal else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
@@ -2299,7 +2367,7 @@ private fun RepeaterContent(
                                 items(COMMON_HEADERS) { (name, defaultVal) ->
                                     val alreadyAdded = wizardHeaders.any { it.first.equals(name, ignoreCase = true) }
                                     Surface(
-                                        onClick = { if (!alreadyAdded) wizardHeaders = wizardHeaders + (name to defaultVal) },
+                                        onClick = { if (!alreadyAdded) onWizardHeaderAdd(name, defaultVal) },
                                         shape = RoundedCornerShape(6.dp),
                                         color = if (alreadyAdded) Teal.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
                                         border = BorderStroke(1.dp, if (alreadyAdded) Teal else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
@@ -2317,11 +2385,23 @@ private fun RepeaterContent(
                             wizardHeaders.forEachIndexed { i, (k, v) ->
                                 Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp)) {
                                     Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Column(Modifier.weight(1f)) {
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                             Text(k, color = Teal, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                            Text(v, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+                                            BasicTextField(
+                                                value = v,
+                                                onValueChange = { onWizardHeaderValueChanged(i, it) },
+                                                textStyle = monoStyle.copy(color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp),
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth(),
+                                                decorationBox = { inner ->
+                                                    Box(Modifier.fillMaxWidth()) {
+                                                        if (v.isEmpty()) Text("(empty)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                                        inner()
+                                                    }
+                                                },
+                                            )
                                         }
-                                        IconButton(onClick = { wizardHeaders = wizardHeaders.toMutableList().also { it.removeAt(i) } }, Modifier.size(28.dp)) {
+                                        IconButton(onClick = { onWizardHeaderRemove(i) }, Modifier.size(28.dp)) {
                                             Icon(Icons.Filled.Delete, null, tint = Red, modifier = Modifier.size(14.dp))
                                         }
                                     }
@@ -2332,7 +2412,7 @@ private fun RepeaterContent(
                                 OutlinedTextField(wizardNewKey, { wizardNewKey = it }, Modifier.weight(1f), label = { Text("Name", fontSize = 11.sp) }, singleLine = true, colors = tfColors, shape = RoundedCornerShape(8.dp), textStyle = monoStyle)
                                 OutlinedTextField(wizardNewValue, { wizardNewValue = it }, Modifier.weight(1f), label = { Text("Value", fontSize = 11.sp) }, singleLine = true, colors = tfColors, shape = RoundedCornerShape(8.dp), textStyle = monoStyle)
                                 IconButton(
-                                    onClick = { if (wizardNewKey.isNotBlank()) { wizardHeaders = wizardHeaders + (wizardNewKey to wizardNewValue); wizardNewKey = ""; wizardNewValue = "" } },
+                                    onClick = { if (wizardNewKey.isNotBlank()) { onWizardHeaderAdd(wizardNewKey, wizardNewValue); wizardNewKey = ""; wizardNewValue = "" } },
                                     enabled = wizardNewKey.isNotBlank(),
                                 ) { Icon(Icons.Filled.Add, null, tint = if (wizardNewKey.isNotBlank()) Teal else MaterialTheme.colorScheme.onSurfaceVariant) }
                             }
@@ -2344,7 +2424,7 @@ private fun RepeaterContent(
                             Text("BODY", color = Teal, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
                             OutlinedTextField(
                                 value = wizardBody,
-                                onValueChange = { wizardBody = it },
+                                onValueChange = onWizardBodyChanged,
                                 modifier = Modifier.fillMaxWidth().height(120.dp),
                                 label = { Text("Request body (optional)") },
                                 colors = tfColors,
@@ -2358,7 +2438,7 @@ private fun RepeaterContent(
                 Button(
                     onClick = {
                         onSendParts(wizardMethod, wizardUrl, wizardHeaders.toMap(), wizardBody)
-                        wizardSent = true
+                        onWizardSentChanged(true)
                     },
                     enabled = !isSendingRequest && wizardUrl.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
@@ -2399,10 +2479,10 @@ private fun RepeaterContent(
                                 fontSize = 10.sp,
                             )
                         }
-                        IconButton(onClick = { wizardSent = false }, Modifier.size(32.dp)) {
+                        IconButton(onClick = { onWizardSentChanged(false) }, Modifier.size(32.dp)) {
                             Icon(Icons.Filled.Settings, "Edit request", tint = Teal, modifier = Modifier.size(16.dp))
                         }
-                        IconButton(onClick = { wizardSent = false; wizardHeaders = emptyList(); wizardBody = ""; wizardUrl = urlInput; wizardMethod = "GET"; onRepeaterReset() }, Modifier.size(32.dp)) {
+                        IconButton(onClick = { onRepeaterReset() }, Modifier.size(32.dp)) {
                             Icon(Icons.Filled.Close, "New request", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                         }
                     }

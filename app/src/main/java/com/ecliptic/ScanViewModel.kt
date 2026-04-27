@@ -33,6 +33,12 @@ data class ScanUiState(
     val scanStage: String = "",
     val repeaterResponse: RepeaterResponse? = null,
     val isSendingRequest: Boolean = false,
+    // Wizard state — persists across tab switches
+    val wizardMethod: String = "GET",
+    val wizardUrl: String = "",
+    val wizardHeaders: List<Pair<String, String>> = emptyList(),
+    val wizardBody: String = "",
+    val wizardSent: Boolean = false,
 )
 
 class ScanViewModel(application: Application) : AndroidViewModel(application) {
@@ -203,12 +209,41 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 signals = null, techs = emptyList(),
                 rawRequest = "", repeaterResponse = null,
                 isSendingRequest = false, scanStage = "",
+                wizardSent = false, wizardHeaders = emptyList(),
+                wizardBody = "", wizardMethod = "GET", wizardUrl = "",
             )
         }
     }
 
+    fun onWizardMethodChanged(m: String) { _state.update { it.copy(wizardMethod = m) } }
+    fun onWizardUrlChanged(u: String) { _state.update { it.copy(wizardUrl = u) } }
+    fun onWizardBodyChanged(b: String) { _state.update { it.copy(wizardBody = b) } }
+    fun onWizardSentChanged(sent: Boolean) { _state.update { it.copy(wizardSent = sent) } }
+    fun onWizardHeaderAdd(k: String, v: String) {
+        if (k.isBlank()) return
+        _state.update { it.copy(wizardHeaders = it.wizardHeaders + (k.trim() to v)) }
+    }
+    fun onWizardHeaderRemove(i: Int) {
+        _state.update { s ->
+            s.copy(wizardHeaders = s.wizardHeaders.toMutableList().also { it.removeAt(i) })
+        }
+    }
+    fun onWizardHeaderValueChanged(i: Int, v: String) {
+        _state.update { s ->
+            val list = s.wizardHeaders.toMutableList()
+            if (i in list.indices) list[i] = list[i].first to v
+            s.copy(wizardHeaders = list)
+        }
+    }
+
     fun onRepeaterReset() {
-        _state.update { it.copy(repeaterResponse = null, isSendingRequest = false) }
+        _state.update {
+            it.copy(
+                repeaterResponse = null, isSendingRequest = false,
+                wizardSent = false, wizardHeaders = emptyList(),
+                wizardBody = "", wizardMethod = "GET",
+            )
+        }
     }
 
     fun sendRepeaterRequest(rawText: String) {
@@ -287,6 +322,11 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                         isScanning = false, scanStage = "", hasScanned = true,
                         signals = result, techs = detected + wpPlugins,
                         rawRequest = buildRawRequest(result, method),
+                        wizardUrl = result.finalUrl,
+                        wizardHeaders = result.requestHeaders.entries.map { e -> e.key to e.value },
+                        wizardMethod = "GET",
+                        wizardBody = "",
+                        wizardSent = false,
                     )
                 }
             } catch (e: Exception) {

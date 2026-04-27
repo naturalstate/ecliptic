@@ -7,6 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -16,16 +18,14 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
+    private var sharedUrl by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val initialUrl = when (intent.action) {
-            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
-            Intent.ACTION_VIEW -> intent.dataString
-            else -> null
-        }
+        sharedUrl = extractUrlFromIntent(intent)
 
         setContent {
             val darkTheme by AppPreferences.darkThemeFlow(applicationContext)
@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
 
             EclipticTheme(darkTheme = darkTheme) {
                 PocScanScreen(
-                    initialUrl = initialUrl,
+                    initialUrl = sharedUrl,
                     isDarkTheme = darkTheme,
                     onToggleTheme = {
                         lifecycleScope.launch {
@@ -49,5 +49,17 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sharedUrl = extractUrlFromIntent(intent)
+    }
+
+    private fun extractUrlFromIntent(intent: Intent): String? = when (intent.action) {
+        Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+        Intent.ACTION_VIEW -> intent.dataString
+        else -> null
     }
 }
