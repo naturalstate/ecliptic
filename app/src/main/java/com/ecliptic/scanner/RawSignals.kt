@@ -11,6 +11,25 @@ data class RepeaterResponse(
     val isBodyTruncated: Boolean get() = body.length < fullBody.length
 }
 
+data class CookieInfo(
+    val name: String,
+    val value: String,
+    val domain: String? = null,
+    val path: String? = null,
+    val expires: String? = null,
+    val maxAge: Long? = null,
+    val httpOnly: Boolean = false,
+    val secure: Boolean = false,
+    val sameSite: String? = null,
+)
+
+data class DetectedApi(
+    val type: String,
+    val confidence: Int,
+    val evidence: String,
+    val endpoint: String? = null,
+)
+
 data class RawSignals(
     val url: String,
     val finalUrl: String,
@@ -26,6 +45,8 @@ data class RawSignals(
     val htmlSource: String,
     val title: String,
     val cookies: Map<String, String> = emptyMap(),
+    val richCookies: List<CookieInfo> = emptyList(),
+    val detectedApis: List<DetectedApi> = emptyList(),
     val domFound: Set<String> = emptySet(),
     val domTree: String = "",
     val tls: TlsResult? = null,

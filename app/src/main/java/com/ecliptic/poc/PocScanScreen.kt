@@ -69,6 +69,8 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.automirrored.filled.ManageSearch
+import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.ViewStream
@@ -140,16 +142,21 @@ import com.ecliptic.BuildConfig
 import com.ecliptic.ScanViewModel
 import com.ecliptic.fingerprint.Technology
 import com.ecliptic.scanner.DnsResult
+import com.ecliptic.scanner.CookieInfo
+import com.ecliptic.scanner.DetectedApi
 import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RdapResult
+import com.ecliptic.scanner.ReconFiles
 import com.ecliptic.scanner.RepeaterResponse
+import com.ecliptic.scanner.fetchAsn
+import com.ecliptic.scanner.fetchReconFiles
+import com.ecliptic.scanner.fetchTextContent
 import com.ecliptic.scanner.TlsResult
 import org.json.JSONArray
 import org.json.JSONObject
 import com.ecliptic.scanner.configureWebView
 import com.ecliptic.scanner.fetchDnsRecords
 import com.ecliptic.scanner.fetchRdapInfo
-import com.ecliptic.scanner.fetchTextContent
 import com.ecliptic.ui.DevIconMapper
 import com.ecliptic.ui.theme.Blue
 import com.ecliptic.ui.theme.Green
@@ -395,7 +402,7 @@ fun PocScanScreen(
                     trailingIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (urlInput.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.onUrlChanged("") }, enabled = !scanning, modifier = Modifier.size(36.dp)) {
+                                IconButton(onClick = { viewModel.onUrlChanged(""); if (hasScanned) { viewModel.onNewScan(); bottomTab = TAB_TECH } }, enabled = !scanning, modifier = Modifier.size(36.dp)) {
                                     Icon(Icons.Filled.Close, "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
                                 }
                             }
@@ -443,14 +450,16 @@ fun PocScanScreen(
 
         // ── Sub-tab chips (INTEL / CODE only, hidden in fullscreen) ──────────
         if (!isFullScreen && hasScanned && !scanning && (bottomTab == TAB_INTEL || bottomTab == TAB_CODE)) {
-            val subLabels = if (bottomTab == TAB_INTEL) listOf("HEADERS", "COOKIES", "NETWORK")
-                            else listOf("SOURCE", "JS", "DOM")
+            val subLabels = if (bottomTab == TAB_INTEL)
+                listOf("HEADERS", "SECURITY", "COOKIES", "APIS", "RECON", "NETWORK", "REQ/RES")
+            else listOf("SOURCE", "JS", "DOM")
             val currentSub = if (bottomTab == TAB_INTEL) intelSubTab else codeSubTab
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                subLabels.forEachIndexed { i, label ->
+                itemsIndexed(subLabels) { i, label ->
                     val sel = currentSub == i
                     Surface(
                         onClick = { if (bottomTab == TAB_INTEL) intelSubTab = i else codeSubTab = i },
@@ -519,8 +528,12 @@ fun PocScanScreen(
                     "empty"   -> EmptyState()
                     "tech"    -> TechResultsContent(techs = techs, error = signals?.error, url = signals?.finalUrl ?: "", onTechClick = { selectedTech = it })
                     "intel_0" -> HeadersContent(requestHeaders = signals?.requestHeaders ?: emptyMap(), responseHeaders = signals?.headers ?: emptyMap())
-                    "intel_1" -> CookiesContent(cookies = signals?.cookies ?: emptyMap())
-                    "intel_2" -> NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls)
+                    "intel_1" -> SecurityHeadersContent(responseHeaders = signals?.headers ?: emptyMap())
+                    "intel_2" -> CookiesContent(richCookies = signals?.richCookies ?: emptyList(), cookies = signals?.cookies ?: emptyMap())
+                    "intel_3" -> ApisContent(apis = signals?.detectedApis ?: emptyList())
+                    "intel_4" -> ReconContent(url = signals?.finalUrl ?: urlInput)
+                    "intel_5" -> NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls, dns = signals?.let { null })
+                    "intel_6" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_1"  -> JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap())
                     "code_2"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
@@ -542,7 +555,7 @@ fun PocScanScreen(
 
                 listOf(
                     Triple(TAB_TECH,   Icons.Filled.Layers,   "Tech"),
-                    Triple(TAB_INTEL,  Icons.Filled.Shield,   "Intel"),
+                    Triple(TAB_INTEL,  Icons.AutoMirrored.Filled.ManageSearch, "Intel"),
                     Triple(TAB_CODE,   Icons.Filled.Code,     "Code"),
                     Triple(TAB_REPEAT, Icons.AutoMirrored.Filled.Send, "Repeat"),
                 ).forEach { (idx, icon, label) ->
@@ -1057,10 +1070,6 @@ private fun HeadersContent(
             }
         }
         item {
-            SecurityHeadersSection(responseHeaders = resHeaders)
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-        item {
             HeaderSectionTitle(
                 title = "RESPONSE HEADERS",
                 badge = status,
@@ -1218,18 +1227,20 @@ private fun HeaderRow(name: String, value: String) {
 // ─── Cookies tab ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun CookiesContent(cookies: Map<String, String>) {
-    if (cookies.isEmpty()) {
+private fun CookiesContent(richCookies: List<CookieInfo>, cookies: Map<String, String>) {
+    val displayCookies = richCookies.ifEmpty {
+        cookies.entries.map { (k, v) -> CookieInfo(name = k, value = v) }
+    }
+    if (displayCookies.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(text = "No cookies detected", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
         }
         return
     }
-
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         item {
             Row(
@@ -1239,24 +1250,492 @@ private fun CookiesContent(cookies: Map<String, String>) {
             ) {
                 Text("COOKIES", color = Teal, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
                 HorizontalDivider(modifier = Modifier.weight(1f), color = Teal.copy(alpha = 0.25f))
-                Text("${cookies.size}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text("${displayCookies.size}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             }
         }
-        items(cookies.entries.toList().sortedBy { it.key }) { (name, value) ->
+        items(displayCookies.sortedBy { it.name }) { c ->
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    Text(text = name, color = Teal, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    if (value.isNotBlank()) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Name + flags row
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(c.name, color = Teal, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        if (c.httpOnly) CookieFlagChip("HttpOnly")
+                        if (c.secure)   CookieFlagChip("Secure")
+                        c.sameSite?.let { CookieFlagChip(it) }
+                    }
+                    // Value
+                    SelectionContainer {
                         Text(
-                            text = value.take(120) + if (value.length > 120) "…" else "",
+                            text = c.value,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 11.sp,
-                            lineHeight = 16.sp,
+                            lineHeight = 15.sp,
+                            fontFamily = FontFamily.Monospace,
                         )
+                    }
+                    // Attributes
+                    val attrs = buildList {
+                        c.domain?.let { add("Domain: $it") }
+                        c.path?.let { add("Path: $it") }
+                        c.expires?.let { add("Expires: $it") }
+                        c.maxAge?.let { add("Max-Age: $it") }
+                    }
+                    if (attrs.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            attrs.forEach { attr ->
+                                Text(attr, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CookieFlagChip(label: String) {
+    Surface(color = Teal.copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp)) {
+        Text(label, modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp), color = Teal, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+// ─── Security Headers tab ─────────────────────────────────────────────────────
+
+private val SECURITY_HEADER_KEYS = listOf(
+    "content-security-policy"            to "Content-Security-Policy",
+    "strict-transport-security"          to "Strict-Transport-Security",
+    "x-frame-options"                    to "X-Frame-Options",
+    "x-content-type-options"             to "X-Content-Type-Options",
+    "referrer-policy"                    to "Referrer-Policy",
+    "permissions-policy"                 to "Permissions-Policy",
+    "x-xss-protection"                   to "X-XSS-Protection",
+    "cross-origin-opener-policy"         to "Cross-Origin-Opener-Policy",
+    "cross-origin-embedder-policy"       to "Cross-Origin-Embedder-Policy",
+    "cross-origin-resource-policy"       to "Cross-Origin-Resource-Policy",
+)
+
+@Composable
+private fun SecurityHeadersContent(responseHeaders: Map<String, String>) {
+    val normalised = responseHeaders.mapKeys { it.key.lowercase() }
+    val present  = SECURITY_HEADER_KEYS.filter { (k, _) -> k in normalised }
+    val missing  = SECURITY_HEADER_KEYS.filter { (k, _) -> k !in normalised }
+    val score    = present.size
+    val total    = SECURITY_HEADER_KEYS.size
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("$score / $total", color = if (score >= 7) Green else if (score >= 4) Teal else Red, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("security headers present", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(4.dp))
+            LinearProgressIndicator(
+                progress = { score.toFloat() / total },
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                color = if (score >= 7) Green else if (score >= 4) Teal else Red,
+                trackColor = MaterialTheme.colorScheme.surface,
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+        if (present.isNotEmpty()) {
+            item {
+                Text("PRESENT", color = Green, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.12.em)
+                Spacer(Modifier.height(4.dp))
+            }
+            items(present) { (key, label) ->
+                val value = normalised[key] ?: ""
+                Surface(modifier = Modifier.fillMaxWidth(), color = Green.copy(alpha = 0.07f), shape = RoundedCornerShape(8.dp)) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(label, color = Green, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        SelectionContainer {
+                            Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp)
+                        }
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(8.dp)) }
+        }
+        if (missing.isNotEmpty()) {
+            item {
+                Text("MISSING", color = Red, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.12.em)
+                Spacer(Modifier.height(4.dp))
+            }
+            items(missing) { (_, label) ->
+                Surface(modifier = Modifier.fillMaxWidth(), color = Red.copy(alpha = 0.06f), shape = RoundedCornerShape(8.dp)) {
+                    Text(label, modifier = Modifier.padding(10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+
+// ─── APIs tab ─────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ApisContent(apis: List<DetectedApi>) {
+    if (apis.isEmpty()) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) {
+            Text("No APIs detected", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+        }
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        items(apis) { api ->
+            val confColor = when {
+                api.confidence >= 80 -> Green
+                api.confidence >= 50 -> Teal
+                else                 -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(api.type, color = Teal, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Surface(color = confColor.copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp)) {
+                            Text("${api.confidence}%", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), color = confColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    api.endpoint?.let { ep ->
+                        Text(ep, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
+                    Text(api.evidence, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp)
+                }
+            }
+        }
+    }
+}
+
+// ─── Recon tab ────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ReconContent(url: String) {
+    val scope = rememberCoroutineScope()
+    val uriHandler = LocalUriHandler.current
+    val domain = remember(url) {
+        try { java.net.URI(url).host?.removePrefix("www.") } catch (_: Exception) { null }
+    }
+
+    var reconFiles    by remember { mutableStateOf<ReconFiles?>(null) }
+    var reconLoading  by remember { mutableStateOf(false) }
+    var rdapResult    by remember { mutableStateOf<RdapResult?>(null) }
+    var rdapLoading   by remember { mutableStateOf(false) }
+
+    var robotsExpanded   by remember { mutableStateOf(false) }
+    var securityExpanded by remember { mutableStateOf(false) }
+    var sitemapExpanded  by remember { mutableStateOf(false) }
+
+    LaunchedEffect(url) {
+        if (url.isBlank()) return@LaunchedEffect
+        reconLoading = true
+        rdapLoading  = true
+        scope.launch {
+            reconFiles   = fetchReconFiles(url)
+            reconLoading = false
+        }
+        if (domain != null) {
+            scope.launch {
+                rdapResult  = fetchRdapInfo(domain)
+                rdapLoading = false
+            }
+        } else {
+            rdapLoading = false
+        }
+    }
+
+    if (url.isBlank()) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) {
+            Text("No URL scanned", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        // Archive.org link
+        item { NetSectionHeader("ARCHIVE", null, false) }
+        item {
+            val archiveUrl = "https://web.archive.org/web/*/$url"
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri(archiveUrl) } },
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("View on Wayback Machine", color = Teal, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Icon(Icons.Filled.OpenInBrowser, null, tint = Teal, modifier = Modifier.size(16.dp))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // WHOIS / RDAP
+        item { NetSectionHeader("WHOIS / REGISTRAR", null, rdapLoading) }
+        when {
+            rdapLoading -> item {
+                Box(Modifier.fillMaxWidth().padding(16.dp), Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Teal, strokeWidth = 2.dp)
+                }
+            }
+            rdapResult?.error != null -> item {
+                Surface(color = Red.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp)) {
+                    Text("⚠  ${rdapResult!!.error}", modifier = Modifier.padding(12.dp), color = Red, fontSize = 12.sp)
+                }
+            }
+            rdapResult != null -> item {
+                val r = rdapResult!!
+                Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        r.registrar?.let { NetKvRow("Registrar", it) }
+                        r.registrant?.let { NetKvRow("Registrant", it) }
+                        r.created?.let  { NetKvRow("Created", it) }
+                        r.expires?.let  { NetKvRow("Expires", it) }
+                        r.updated?.let  { NetKvRow("Updated", it) }
+                        if (r.status.isNotEmpty()) NetKvRow("Status", r.status.joinToString(", "))
+                        if (r.nameServers.isNotEmpty()) NetKvRow("Name servers", r.nameServers.joinToString("\n"))
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+
+        // robots.txt
+        item { NetSectionHeader("ROBOTS.TXT", null, reconLoading) }
+        when {
+            reconLoading -> item {
+                Box(Modifier.fillMaxWidth().padding(16.dp), Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Teal, strokeWidth = 2.dp)
+                }
+            }
+            reconFiles?.robotsTxt == null -> item {
+                Text("Not found", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            }
+            else -> item {
+                val txt = reconFiles!!.robotsTxt!!
+                val preview = if (robotsExpanded) txt else txt.lines().take(8).joinToString("\n")
+                Surface(modifier = Modifier.fillMaxWidth().clickable { robotsExpanded = !robotsExpanded }, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp)) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        SelectionContainer { Text(preview, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp) }
+                        if (txt.lines().size > 8) {
+                            Text(if (robotsExpanded) "Show less" else "Show all (${txt.lines().size} lines)", color = Teal, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+
+        // security.txt
+        item { NetSectionHeader("SECURITY.TXT", null, reconLoading) }
+        if (!reconLoading) {
+            if (reconFiles?.securityTxt == null) {
+                item { Text("Not found", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+            } else {
+                val txt = reconFiles!!.securityTxt!!
+                item {
+                    val preview = if (securityExpanded) txt else txt.lines().take(8).joinToString("\n")
+                    Surface(modifier = Modifier.fillMaxWidth().clickable { securityExpanded = !securityExpanded }, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp)) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            SelectionContainer { Text(preview, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp) }
+                            if (txt.lines().size > 8) {
+                                Text(if (securityExpanded) "Show less" else "Show all (${txt.lines().size} lines)", color = Teal, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+
+        // sitemap.xml
+        item { NetSectionHeader("SITEMAP.XML", null, reconLoading) }
+        if (!reconLoading) {
+            if (reconFiles?.sitemapXml == null) {
+                item { Text("Not found", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+            } else {
+                val txt = reconFiles!!.sitemapXml!!
+                item {
+                    val preview = if (sitemapExpanded) txt else txt.lines().take(8).joinToString("\n")
+                    Surface(modifier = Modifier.fillMaxWidth().clickable { sitemapExpanded = !sitemapExpanded }, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp)) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            SelectionContainer { Text(preview, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp) }
+                            if (txt.lines().size > 8) {
+                                Text(if (sitemapExpanded) "Show less" else "Show all (${txt.lines().size} lines)", color = Teal, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── REQ / RES tab ────────────────────────────────────────────────────────────
+
+@Composable
+private fun ReqResContent(
+    rawRequest: String,
+    signals: RawSignals?,
+    isFullScreen: Boolean,
+    onToggleFullScreen: () -> Unit,
+) {
+    val rawResponse = remember(signals) {
+        if (signals == null) return@remember ""
+        buildString {
+            appendLine("HTTP/1.1 200 OK")
+            signals.headers.forEach { (k, v) -> appendLine("$k: $v") }
+            appendLine()
+            append(signals.htmlSource.take(50_000))
+        }
+    }
+
+    var searchQuery  by remember { mutableStateOf("") }
+    val reqListState = rememberLazyListState()
+    val resListState = rememberLazyListState()
+    val scope        = rememberCoroutineScope()
+
+    val reqLines = remember(rawRequest, searchQuery) {
+        val lines = rawRequest.lines()
+        if (searchQuery.isBlank()) lines.mapIndexed { i, l -> i to l }
+        else lines.mapIndexed { i, l -> i to l }.filter { (_, l) -> l.contains(searchQuery, ignoreCase = true) }
+    }
+    val resLines = remember(rawResponse, searchQuery) {
+        val lines = rawResponse.lines()
+        if (searchQuery.isBlank()) lines.mapIndexed { i, l -> i to l }
+        else lines.mapIndexed { i, l -> i to l }.filter { (_, l) -> l.contains(searchQuery, ignoreCase = true) }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Toolbar
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Surface(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp)) {
+                BasicTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                    decorationBox = { inner ->
+                        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                            Box { if (searchQuery.isEmpty()) Text("Filter…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp); inner() }
+                        }
+                    },
+                )
+            }
+            IconButton(onClick = onToggleFullScreen, modifier = Modifier.size(32.dp)) {
+                Icon(if (isFullScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            }
+        }
+
+        // Request pane
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("REQUEST", color = Teal, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
+                Row {
+                    IconButton(onClick = { scope.launch { reqListState.scrollToItem(0) } }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.VerticalAlignTop, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                    }
+                    IconButton(onClick = { scope.launch { if (reqListState.firstVisibleItemIndex > 0) reqListState.scrollToItem(maxOf(0, reqListState.firstVisibleItemIndex - 10)) } }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.KeyboardArrowUp, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                    }
+                    IconButton(onClick = { scope.launch { reqListState.scrollToItem(minOf(reqLines.lastIndex, reqListState.firstVisibleItemIndex + 10)) } }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                    }
+                    IconButton(onClick = { scope.launch { if (reqLines.isNotEmpty()) reqListState.scrollToItem(reqLines.lastIndex) } }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.VerticalAlignBottom, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
+            HorizontalDivider(color = Teal.copy(alpha = 0.2f))
+            if (rawRequest.isBlank()) {
+                Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    Text("No request captured", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+            } else {
+                SelectionContainer {
+                    LazyColumn(state = reqListState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp)) {
+                        items(reqLines) { (origIdx, line) ->
+                            val color = if (origIdx == 0) Teal else if (line.contains(':')) Blue else MaterialTheme.colorScheme.onSurface
+                            val highlighted = if (searchQuery.isNotBlank() && line.contains(searchQuery, ignoreCase = true)) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            } else Color.Transparent
+                            Box(modifier = Modifier.fillMaxWidth().background(highlighted)) {
+                                Text(line, color = color, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        // Response pane
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("RESPONSE", color = Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
+                Row {
+                    IconButton(onClick = { scope.launch { resListState.scrollToItem(0) } }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.VerticalAlignTop, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                    }
+                    IconButton(onClick = { scope.launch { if (resListState.firstVisibleItemIndex > 0) resListState.scrollToItem(maxOf(0, resListState.firstVisibleItemIndex - 10)) } }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.KeyboardArrowUp, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                    }
+                    IconButton(onClick = { scope.launch { resListState.scrollToItem(minOf(resLines.lastIndex, resListState.firstVisibleItemIndex + 10)) } }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                    }
+                    IconButton(onClick = { scope.launch { if (resLines.isNotEmpty()) resListState.scrollToItem(resLines.lastIndex) } }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.VerticalAlignBottom, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
+            HorizontalDivider(color = Blue.copy(alpha = 0.2f))
+            if (rawResponse.isBlank() || signals == null) {
+                Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    Text("No response captured", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+            } else {
+                SelectionContainer {
+                    LazyColumn(state = resListState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp)) {
+                        items(resLines) { (origIdx, line) ->
+                            val color = if (origIdx == 0) Green else if (line.contains(':')) Blue else MaterialTheme.colorScheme.onSurface
+                            val highlighted = if (searchQuery.isNotBlank() && line.contains(searchQuery, ignoreCase = true)) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            } else Color.Transparent
+                            Box(modifier = Modifier.fillMaxWidth().background(highlighted)) {
+                                Text(line, color = color, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -1791,35 +2270,28 @@ private fun extractSocialLinks(html: String): List<SocialLink> {
 }
 
 @Composable
-private fun NetworkContent(url: String, html: String, tls: TlsResult? = null) {
+private fun NetworkContent(url: String, html: String, tls: TlsResult? = null, dns: Nothing? = null) {
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
 
     val domain = remember(url) {
         try { java.net.URI(url).host?.removePrefix("www.") } catch (_: Exception) { null }
     }
-    val rdapDomain = remember(domain) {
-        domain?.split('.')?.takeLast(2)?.joinToString(".")
-    }
 
     var dnsResult by remember { mutableStateOf<DnsResult?>(null) }
-    var rdapResult by remember { mutableStateOf<RdapResult?>(null) }
     var dnsLoading by remember { mutableStateOf(false) }
-    var rdapLoading by remember { mutableStateOf(false) }
+    var asn by remember { mutableStateOf<String?>(null) }
 
     val socialLinks = remember(html) { extractSocialLinks(html) }
 
     LaunchedEffect(domain) {
         if (domain == null) return@LaunchedEffect
         dnsLoading = true
-        rdapLoading = true
         scope.launch {
             dnsResult = fetchDnsRecords(domain)
             dnsLoading = false
-        }
-        scope.launch {
-            rdapResult = fetchRdapInfo(rdapDomain ?: domain)
-            rdapLoading = false
+            // ASN lookup from first A record
+            dnsResult?.aRecords?.firstOrNull()?.let { ip -> asn = fetchAsn(ip) }
         }
     }
 
@@ -1901,42 +2373,16 @@ private fun NetworkContent(url: String, html: String, tls: TlsResult? = null) {
             item { Spacer(Modifier.height(8.dp)) }
         }
 
-        // WHOIS / RDAP
-        item { NetSectionHeader("WHOIS / REGISTRAR", null, rdapLoading) }
-        when {
-            rdapLoading -> item {
-                Box(Modifier.fillMaxWidth().padding(16.dp), Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Teal, strokeWidth = 2.dp)
+        // ASN
+        asn?.let { asnVal ->
+            item { NetSectionHeader("ASN", null, false) }
+            item {
+                Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
+                    Text(asnVal, modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
                 }
             }
-            rdapResult?.error != null -> item {
-                Surface(color = Red.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp)) {
-                    Text("⚠  ${rdapResult!!.error}", modifier = Modifier.padding(12.dp), color = Red, fontSize = 12.sp)
-                }
-            }
-            rdapResult != null -> {
-                val r = rdapResult!!
-                item {
-                    Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            r.registrar?.let { NetKvRow("Registrar", it) }
-                            r.registrant?.let { NetKvRow("Registrant", it) }
-                            r.created?.let { NetKvRow("Created", it) }
-                            r.expires?.let { NetKvRow("Expires", it) }
-                            r.updated?.let { NetKvRow("Updated", it) }
-                            if (r.status.isNotEmpty()) {
-                                NetKvRow("Status", r.status.joinToString(", "))
-                            }
-                            if (r.nameServers.isNotEmpty()) {
-                                NetKvRow("Name servers", r.nameServers.joinToString("\n"))
-                            }
-                        }
-                    }
-                }
-            }
+            item { Spacer(Modifier.height(8.dp)) }
         }
-
-        item { Spacer(Modifier.height(8.dp)) }
 
         // DNS records
         item { NetSectionHeader("DNS RECORDS", null, dnsLoading) }

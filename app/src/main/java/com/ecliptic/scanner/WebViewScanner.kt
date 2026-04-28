@@ -310,7 +310,7 @@ suspend fun scanUrl(
                 onStage("Loading page…")
                 val json = loadAndInject(webView, url, harvestJs)
                 val httpOnlyCookies = parseCookieHeader(CookieManager.getInstance().getCookie(url) ?: "")
-                parseSignals(url, fetched.request, fetched.response, json, httpOnlyCookies, fetched.tls)
+                parseSignals(url, fetched.request, fetched.response, json, httpOnlyCookies, fetched.tls, fetched.richCookies)
             }
         }
     } catch (e: TimeoutCancellationException) {
@@ -367,6 +367,7 @@ private fun parseSignals(
     json: String,
     httpOnlyCookies: Map<String, String>,
     tls: TlsResult? = null,
+    richCookies: List<CookieInfo> = emptyList(),
 ): RawSignals {
     return try {
         val trimmed = json.trim().removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
@@ -406,6 +407,8 @@ private fun parseSignals(
             return (0 until arr.length()).map { arr.getString(it) }
         }
 
+        val htmlSource = root.optString("htmlSource")
+        val scriptUrls = jsonArrayToList("scriptUrls")
         RawSignals(
             url = url,
             finalUrl = root.optString("finalUrl", url),
@@ -414,13 +417,15 @@ private fun parseSignals(
             globals = globals,
             jsProbe = jsProbe,
             metaTags = metas,
-            scriptUrls = jsonArrayToList("scriptUrls"),
+            scriptUrls = scriptUrls,
             cssUrls = jsonArrayToList("cssUrls"),
             bodyClasses = root.optString("bodyClasses").split(" ").filter { it.isNotBlank() },
             htmlAttrs = htmlAttrs,
-            htmlSource = root.optString("htmlSource"),
+            htmlSource = htmlSource,
             title = root.optString("title"),
             cookies = allCookies,
+            richCookies = richCookies,
+            detectedApis = detectApis(htmlSource, responseHeaders, scriptUrls),
             domFound = domFound,
             domTree = root.optString("domTree", ""),
             tls = tls,
@@ -442,7 +447,81 @@ private data class FetchedHeaders(
     val request: Map<String, String>,
     val response: Map<String, String>,
     val tls: TlsResult? = null,
+    val richCookies: List<CookieInfo> = emptyList(),
 )
+
+private fun parseSetCookieHeader(header: String): CookieInfo {
+    val parts = header.split(";").map { it.trim() }
+    val nameVal = parts.first()
+    val eqIdx = nameVal.indexOf('=')
+    val name = if (eqIdx > 0) nameVal.substring(0, eqIdx).trim() else nameVal.trim()
+    val value = if (eqIdx > 0) nameVal.substring(eqIdx + 1).trim() else ""
+    var domain: String? = null
+    var path: String? = null
+    var expires: String? = null
+    var maxAge: Long? = null
+    var httpOnly = false
+    var secure = false
+    var sameSite: String? = null
+    for (i in 1 until parts.size) {
+        val p = parts[i]
+        val pLower = p.lowercase()
+        when {
+            pLower.startsWith("domain=")   -> domain   = p.substringAfter("=").trim()
+            pLower.startsWith("path=")     -> path     = p.substringAfter("=").trim()
+            pLower.startsWith("expires=")  -> expires  = p.substringAfter("=").trim()
+            pLower.startsWith("max-age=")  -> maxAge   = p.substringAfter("=").trim().toLongOrNull()
+            pLower.startsWith("samesite=") -> sameSite = p.substringAfter("=").trim()
+            pLower == "httponly"           -> httpOnly = true
+            pLower == "secure"             -> secure   = true
+        }
+    }
+    return CookieInfo(name, value, domain, path, expires, maxAge, httpOnly, secure, sameSite)
+}
+
+internal fun detectApis(html: String, headers: Map<String, String>, scriptUrls: List<String>): List<DetectedApi> {
+    val results = mutableListOf<DetectedApi>()
+    val lower = html.lowercase()
+
+    // GraphQL
+    val graphqlEndpoint = Regex("""['"](/[a-z0-9/_-]*graphql[a-z0-9/_-]*)['"]""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.getOrNull(1)
+    if (lower.contains("graphql") || lower.contains("__schema") || lower.contains("__typename")) {
+        results += DetectedApi("GraphQL", 85, "GraphQL references found in HTML", graphqlEndpoint)
+    } else if (scriptUrls.any { "graphql" in it.lowercase() }) {
+        results += DetectedApi("GraphQL", 70, "GraphQL script URL detected", null)
+    }
+
+    // OpenAPI / Swagger
+    if (lower.contains("swagger") || lower.contains("openapi") || lower.contains("api-docs")) {
+        val swaggerEndpoint = Regex("""['"]([^'"]*(?:swagger|openapi|api-docs)[^'"]*)['"]""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.getOrNull(1)
+        results += DetectedApi("OpenAPI/Swagger", 90, "Swagger/OpenAPI reference found in HTML", swaggerEndpoint?.take(80))
+    }
+
+    // REST (API path patterns)
+    val restMatches = Regex("""['"](/(?:api|v\d+)/[a-z0-9/_-]{2,40})['"]""", RegexOption.IGNORE_CASE)
+        .findAll(html).map { it.groupValues[1] }.distinct().take(3).toList()
+    if (restMatches.isNotEmpty()) {
+        results += DetectedApi("REST", 70, "${restMatches.size} API path(s) in HTML", restMatches.first())
+    }
+
+    // SOAP
+    if (lower.contains("wsdl") || lower.contains("soapenv:") || lower.contains("soap:") ||
+        headers.keys.any { it.lowercase() == "soapaction" }) {
+        results += DetectedApi("SOAP", 85, "WSDL/SOAP references detected")
+    }
+
+    // gRPC
+    if (lower.contains("grpc") || headers.values.any { "application/grpc" in it.lowercase() }) {
+        results += DetectedApi("gRPC", 85, "gRPC references detected")
+    }
+
+    // JSON-RPC
+    if (lower.contains("jsonrpc") || lower.contains("json-rpc")) {
+        results += DetectedApi("JSON-RPC", 80, "JSON-RPC references found in HTML")
+    }
+
+    return results.distinctBy { it.type }.sortedByDescending { it.confidence }
+}
 
 private fun String.extractCN(): String =
     split(",").firstOrNull { it.trimStart().startsWith("CN=") }
@@ -551,7 +630,8 @@ private fun fetchHeaders(
                     )
                 } catch (_: Exception) { null }
             }
-            FetchedHeaders(reqHeaders, resHeaders, tls)
+            val richCookies = response.headers.values("set-cookie").map { parseSetCookieHeader(it) }
+            FetchedHeaders(reqHeaders, resHeaders, tls, richCookies)
         }
     } catch (e: Exception) {
         FetchedHeaders(emptyMap(), mapOf("_header_error" to (e.message ?: "failed")))

@@ -156,6 +156,45 @@ suspend fun fetchRdapInfo(domain: String): RdapResult = withContext(Dispatchers.
     RdapResult(error = lastError)
 }
 
+data class ReconFiles(
+    val robotsTxt: String? = null,
+    val securityTxt: String? = null,
+    val sitemapXml: String? = null,
+)
+
+suspend fun fetchReconFiles(baseUrl: String): ReconFiles = withContext(Dispatchers.IO) {
+    val base = try {
+        val u = java.net.URI(baseUrl)
+        "${u.scheme}://${u.host}${if (u.port > 0) ":${u.port}" else ""}"
+    } catch (_: Exception) { baseUrl.trimEnd('/') }
+
+    fun fetch(path: String): String? = try {
+        val req = Request.Builder().url("$base$path").header("User-Agent", USER_AGENT).build()
+        httpClient.newCall(req).execute().use { resp ->
+            if (resp.isSuccessful) resp.body?.string()?.take(50_000) else null
+        }
+    } catch (_: Exception) { null }
+
+    ReconFiles(
+        robotsTxt  = fetch("/robots.txt"),
+        securityTxt = fetch("/.well-known/security.txt") ?: fetch("/security.txt"),
+        sitemapXml  = fetch("/sitemap.xml") ?: fetch("/sitemap_index.xml"),
+    )
+}
+
+suspend fun fetchAsn(ip: String): String? = withContext(Dispatchers.IO) {
+    try {
+        val req = Request.Builder()
+            .url("https://ipinfo.io/$ip/org")
+            .header("Accept", "text/plain")
+            .header("User-Agent", USER_AGENT)
+            .build()
+        httpClient.newCall(req).execute().use { resp ->
+            if (resp.isSuccessful) resp.body?.string()?.trim()?.take(100) else null
+        }
+    } catch (_: Exception) { null }
+}
+
 private fun extractEntityName(entity: JSONObject): String? {
     val vcard = entity.optJSONArray("vcardArray") ?: return null
     if (vcard.length() < 2) return null
