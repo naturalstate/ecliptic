@@ -114,6 +114,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -142,12 +143,15 @@ import com.ecliptic.BuildConfig
 import com.ecliptic.ScanViewModel
 import com.ecliptic.fingerprint.Technology
 import com.ecliptic.scanner.DnsResult
+import com.ecliptic.scanner.ConsoleMessage
 import com.ecliptic.scanner.CookieInfo
 import com.ecliptic.scanner.DetectedApi
+import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RdapResult
 import com.ecliptic.scanner.ReconFiles
 import com.ecliptic.scanner.RepeaterResponse
+import com.ecliptic.scanner.WebViewClients
 import com.ecliptic.scanner.fetchAsn
 import com.ecliptic.scanner.fetchReconFiles
 import com.ecliptic.scanner.fetchTextContent
@@ -257,10 +261,12 @@ fun PocScanScreen(
     val wizardHeaders = state.wizardHeaders
     val wizardBody = state.wizardBody
     val wizardSent = state.wizardSent
+    val liveNetworkRequests = state.liveNetworkRequests
+    val consoleMessages = state.consoleMessages
 
     var bottomTab    by remember { mutableIntStateOf(TAB_TECH) }
-    var intelSubTab  by remember { mutableIntStateOf(0) }   // 0=HEADERS 1=COOKIES 2=NETWORK
-    var codeSubTab   by remember { mutableIntStateOf(0) }   // 0=SOURCE  1=JS      2=DOM
+    var intelSubTab  by remember { mutableIntStateOf(0) }   // 0=HEADERS … 6=REQ/RES
+    var codeSubTab   by remember { mutableIntStateOf(0) }   // 0=SOURCE 1=JS 2=DOM 3=NET 4=CONSOLE
     var showSettings by remember { mutableStateOf(false) }
     var selectedTech by remember { mutableStateOf<Technology?>(null) }
     var isFullScreen by remember { mutableStateOf(false) }
@@ -276,6 +282,16 @@ fun PocScanScreen(
         if (!scanning && hasScanned) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             if (bottomTab == TAB_REPEAT) bottomTab = TAB_TECH
+            // Hand off live capture callbacks to ViewModel after scan completes
+            val clients = webView.tag as? WebViewClients
+            clients?.viewClient?.onRequest  = { req -> viewModel.appendNetworkRequest(req) }
+            clients?.chromeClient?.onConsole = { msg -> viewModel.appendConsoleMessage(msg) }
+        }
+        if (scanning) {
+            // Clear live callbacks while scan is running (scan captures into its own local list)
+            val clients = webView.tag as? WebViewClients
+            clients?.viewClient?.onRequest  = null
+            clients?.chromeClient?.onConsole = null
         }
     }
 
@@ -377,8 +393,8 @@ fun PocScanScreen(
             }
         }
 
-        // ── URL input (hidden in fullscreen) ──────────────────────────────────
-        if (!isFullScreen) {
+        // ── URL input (Tech tab only, hidden in fullscreen) ───────────────────
+        if (!isFullScreen && (bottomTab == TAB_TECH || !hasScanned)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -452,7 +468,7 @@ fun PocScanScreen(
         if (!isFullScreen && hasScanned && !scanning && (bottomTab == TAB_INTEL || bottomTab == TAB_CODE)) {
             val subLabels = if (bottomTab == TAB_INTEL)
                 listOf("HEADERS", "SECURITY", "COOKIES", "APIS", "RECON", "NETWORK", "REQ/RES")
-            else listOf("SOURCE", "JS", "DOM")
+            else listOf("SOURCE", "JS", "DOM", "NET", "CONSOLE")
             val currentSub = if (bottomTab == TAB_INTEL) intelSubTab else codeSubTab
             LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -537,6 +553,8 @@ fun PocScanScreen(
                     "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_1"  -> JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap())
                     "code_2"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
+                    "code_3"  -> NetContent(scanRequests = signals?.networkRequests ?: emptyList(), liveRequests = liveNetworkRequests)
+                    "code_4"  -> ConsoleContent(messages = consoleMessages, evalJs = { cmd, cb -> webView.evaluateJavascript(cmd, cb) })
                     else      -> Box(modifier = Modifier.fillMaxSize())
                 }
             }
@@ -2637,6 +2655,359 @@ private fun DomContent(domTreeJson: String, isFullScreen: Boolean = false, onTog
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+// ─── Network tab ─────────────────────────────────────────────────────────────
+
+private val NET_TYPE_COLOR = mapOf(
+    "script"     to Color(0xFF7C4DFF),
+    "stylesheet" to Color(0xFF0091EA),
+    "xhr"        to Color(0xFF00BCD4),
+    "fetch"      to Color(0xFF00BCD4),
+    "image"      to Color(0xFF43A047),
+    "font"       to Color(0xFFFF6F00),
+    "media"      to Color(0xFFE91E63),
+    "other"      to Color(0xFF607D8B),
+)
+
+private val NET_FILTER_TYPES = listOf("ALL", "script", "stylesheet", "xhr", "image", "font", "media", "other")
+
+@Composable
+private fun NetContent(
+    scanRequests: List<NetworkRequest>,
+    liveRequests: List<NetworkRequest>,
+) {
+    val all = remember(scanRequests.size, liveRequests.size) {
+        (scanRequests + liveRequests).distinctBy { it.url + it.type }
+    }
+    var selectedType by remember { mutableStateOf("ALL") }
+    var query by remember { mutableStateOf("") }
+
+    val filtered = remember(all, selectedType, query) {
+        all.filter {
+            (selectedType == "ALL" || it.type == selectedType) &&
+                (query.isBlank() || it.url.contains(query, ignoreCase = true))
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            placeholder = { Text("Filter URLs…", fontSize = 13.sp) },
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Teal,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+            ),
+            textStyle = TextStyle(fontSize = 13.sp, fontFamily = FontFamily.Monospace),
+            leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(18.dp)) },
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            items(NET_FILTER_TYPES) { type ->
+                val isSelected = type == selectedType
+                val count = if (type == "ALL") all.size else all.count { it.type == type }
+                if (type != "ALL" && count == 0) return@items
+                val chipColor = if (type == "ALL") Teal else (NET_TYPE_COLOR[type] ?: Teal)
+                Surface(
+                    onClick = { selectedType = type },
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isSelected) chipColor.copy(alpha = 0.20f) else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        1.dp,
+                        if (isSelected) chipColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    ),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            type,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) chipColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (count > 0) {
+                            Text(
+                                "$count",
+                                fontSize = 10.sp,
+                                color = if (isSelected) chipColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        if (filtered.isEmpty()) {
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                Text(
+                    if (all.isEmpty()) "No network requests captured" else "No matches",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+            ) {
+                itemsIndexed(filtered) { _, req ->
+                    NetRequestRow(req)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NetRequestRow(req: NetworkRequest) {
+    val typeColor = NET_TYPE_COLOR[req.type] ?: Color(0xFF607D8B)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = typeColor.copy(alpha = 0.15f),
+        ) {
+            Text(
+                req.type.take(5).uppercase(),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = typeColor,
+                modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp),
+            )
+        }
+        if (req.method != "GET") {
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = Teal.copy(alpha = 0.15f),
+            ) {
+                Text(
+                    req.method,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Teal,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp),
+                )
+            }
+        }
+        Text(
+            text = req.url,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurface,
+            lineHeight = 16.sp,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+// ─── Console tab ─────────────────────────────────────────────────────────────
+
+private sealed class ConsoleEntry {
+    data class PageMsg(val msg: ConsoleMessage, val id: Long = System.nanoTime()) : ConsoleEntry()
+    data class UserCmd(val input: String, val id: Long = System.nanoTime()) : ConsoleEntry()
+    data class CmdResult(val result: String, val isError: Boolean, val id: Long = System.nanoTime()) : ConsoleEntry()
+}
+
+private val CONSOLE_BG      = Color(0xFF0D1117)
+private val CONSOLE_SURFACE = Color(0xFF161B22)
+private val CONSOLE_BORDER  = Color(0xFF30363D)
+
+private fun consoleColor(level: String) = when (level.lowercase()) {
+    "error" -> Color(0xFFFF5555)
+    "warn"  -> Color(0xFFFFB86C)
+    "info"  -> Color(0xFF8BE9FD)
+    "debug" -> Color(0xFF6272A4)
+    else    -> Color(0xFFCDD9E5)
+}
+
+@Composable
+private fun ConsoleContent(
+    messages: List<ConsoleMessage>,
+    evalJs: (String, (String?) -> Unit) -> Unit,
+) {
+    val entries = remember { mutableStateOf<List<ConsoleEntry>>(emptyList()) }
+    val listState = rememberLazyListState()
+    var input by remember { mutableStateOf("") }
+
+    LaunchedEffect(messages.size) {
+        val already = entries.value.count { it is ConsoleEntry.PageMsg }
+        val newMsgs = messages.drop(already)
+        if (newMsgs.isNotEmpty()) {
+            entries.value = entries.value + newMsgs.map { ConsoleEntry.PageMsg(it) }
+        }
+    }
+
+    LaunchedEffect(entries.value.size) {
+        if (entries.value.isNotEmpty()) listState.animateScrollToItem(entries.value.size - 1)
+    }
+
+    fun runCmd(cmd: String) {
+        if (cmd.isBlank()) return
+        input = ""
+        entries.value = entries.value + ConsoleEntry.UserCmd(cmd)
+        evalJs(cmd) { raw ->
+            val result = raw ?: "undefined"
+            val clean = result
+                .removeSurrounding("\"")
+                .replace("\\n", "\n")
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\")
+            val isErr = result.startsWith("\"Uncaught") || result.startsWith("\"ReferenceError") ||
+                result.startsWith("\"TypeError") || result.startsWith("\"SyntaxError")
+            entries.value = entries.value + ConsoleEntry.CmdResult(clean, isErr)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CONSOLE_BG),
+    ) {
+        Text(
+            "Page JS context — same as Firefox DevTools console",
+            fontSize = 10.sp,
+            color = Color(0xFF6272A4),
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+        )
+        HorizontalDivider(color = CONSOLE_BORDER)
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 10.dp),
+            contentPadding = PaddingValues(vertical = 6.dp),
+        ) {
+            if (entries.value.isEmpty()) {
+                item {
+                    Text(
+                        "Waiting for console output…",
+                        color = Color(0xFF6272A4),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
+                }
+            }
+            itemsIndexed(entries.value, key = { _, e ->
+                when (e) {
+                    is ConsoleEntry.PageMsg   -> e.id
+                    is ConsoleEntry.UserCmd   -> e.id
+                    is ConsoleEntry.CmdResult -> e.id
+                }
+            }) { _, entry ->
+                when (entry) {
+                    is ConsoleEntry.PageMsg -> {
+                        val color = consoleColor(entry.msg.level)
+                        val prefix = when (entry.msg.level.lowercase()) {
+                            "error" -> "[ERR] "
+                            "warn"  -> "[WRN] "
+                            "info"  -> "[INF] "
+                            "debug" -> "[DBG] "
+                            else    -> "[LOG] "
+                        }
+                        SelectionContainer {
+                            Text(
+                                text = prefix + entry.msg.message,
+                                color = color,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                lineHeight = 18.sp,
+                                modifier = Modifier.padding(vertical = 1.dp),
+                            )
+                        }
+                    }
+                    is ConsoleEntry.UserCmd -> {
+                        Text(
+                            text = "> ${entry.input}",
+                            color = Teal,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(vertical = 2.dp),
+                        )
+                    }
+                    is ConsoleEntry.CmdResult -> {
+                        SelectionContainer {
+                            Text(
+                                text = entry.result,
+                                color = if (entry.isError) Color(0xFFFF5555) else Color(0xFFCDD9E5),
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                lineHeight = 18.sp,
+                                modifier = Modifier.padding(start = 12.dp, top = 1.dp, bottom = 1.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        HorizontalDivider(color = CONSOLE_BORDER)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(CONSOLE_SURFACE)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                ">",
+                color = Teal,
+                fontSize = 14.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+            )
+            BasicTextField(
+                value = input,
+                onValueChange = { input = it },
+                modifier = Modifier.weight(1f),
+                textStyle = TextStyle(
+                    color = Color(0xFFCDD9E5),
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { runCmd(input.trim()) }),
+                singleLine = true,
+                cursorBrush = SolidColor(Teal),
+                decorationBox = { inner ->
+                    Box {
+                        if (input.isEmpty()) {
+                            Text(
+                                "Type JS expression…",
+                                color = Color(0xFF6272A4),
+                                fontSize = 13.sp,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
+                        inner()
+                    }
+                },
+            )
+            TextButton(
+                onClick = { runCmd(input.trim()) },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text("Run", color = Teal, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

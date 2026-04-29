@@ -2,8 +2,10 @@ package com.ecliptic.scanner
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import kotlinx.coroutines.Dispatchers
@@ -271,6 +273,80 @@ suspend fun fetchTextContent(url: String): String {
 }
 
 @SuppressLint("SetJavaScriptEnabled")
+// ── Persistent WebView clients ────────────────────────────────────────────────
+
+data class WebViewClients(
+    val viewClient: EclipticWebViewClient,
+    val chromeClient: EclipticChromeClient,
+)
+
+class EclipticWebViewClient : WebViewClient() {
+    @Volatile var onPageReady: (() -> Unit)? = null
+    @Volatile var onPageError: ((String) -> Unit)? = null
+    @Volatile var onRequest: ((NetworkRequest) -> Unit)? = null
+
+    override fun onPageFinished(view: WebView, url: String) {
+        onPageReady?.invoke()
+    }
+
+    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+        if (request.isForMainFrame) onPageError?.invoke(error.description.toString())
+    }
+
+    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+        val url = request.url.toString()
+        if (!url.startsWith("data:") && !url.startsWith("blob:")) {
+            onRequest?.invoke(NetworkRequest(
+                url = url,
+                type = inferResourceType(url),
+                method = request.method ?: "GET",
+            ))
+        }
+        return null
+    }
+}
+
+class EclipticChromeClient : WebChromeClient() {
+    @Volatile var onConsole: ((ConsoleMessage) -> Unit)? = null
+
+    override fun onConsoleMessage(msg: android.webkit.ConsoleMessage): Boolean {
+        onConsole?.invoke(ConsoleMessage(
+            level = when (msg.messageLevel()) {
+                android.webkit.ConsoleMessage.MessageLevel.ERROR   -> "error"
+                android.webkit.ConsoleMessage.MessageLevel.WARNING -> "warn"
+                android.webkit.ConsoleMessage.MessageLevel.DEBUG   -> "debug"
+                android.webkit.ConsoleMessage.MessageLevel.TIP     -> "info"
+                else                                                -> "log"
+            },
+            message    = msg.message(),
+            sourceUrl  = msg.sourceId().takeIf { it.isNotBlank() },
+            lineNumber = msg.lineNumber(),
+        ))
+        return true
+    }
+}
+
+private fun inferResourceType(url: String): String {
+    val path = url.substringBefore("?").substringBefore("#").lowercase()
+    return when {
+        path.endsWith(".js") || path.endsWith(".mjs") || path.endsWith(".jsx") -> "script"
+        path.endsWith(".css")                                                   -> "stylesheet"
+        path.endsWith(".woff") || path.endsWith(".woff2") || path.endsWith(".ttf") ||
+            path.endsWith(".otf") || path.endsWith(".eot")                     -> "font"
+        path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg") ||
+            path.endsWith(".gif") || path.endsWith(".svg") || path.endsWith(".webp") ||
+            path.endsWith(".ico") || path.endsWith(".avif")                    -> "image"
+        path.endsWith(".mp4") || path.endsWith(".webm") || path.endsWith(".mp3") ||
+            path.endsWith(".ogg") || path.endsWith(".wav")                     -> "media"
+        path.contains("/graphql") || path.contains("/api/") ||
+            path.contains("/rest/") || path.contains("/v1/") ||
+            path.contains("/v2/") || path.contains("/v3/")                     -> "xhr"
+        else -> "other"
+    }
+}
+
+fun getWebViewClients(webView: WebView): WebViewClients? = webView.tag as? WebViewClients
+
 fun configureWebView(webView: WebView) {
     webView.settings.apply {
         javaScriptEnabled = true
@@ -283,6 +359,11 @@ fun configureWebView(webView: WebView) {
         setSupportZoom(false)
         builtInZoomControls = false
     }
+    webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+    val clients = WebViewClients(EclipticWebViewClient(), EclipticChromeClient())
+    webView.webViewClient  = clients.viewClient
+    webView.webChromeClient = clients.chromeClient
+    webView.tag = clients
     WebView.setWebContentsDebuggingEnabled(false)
 }
 
@@ -304,13 +385,20 @@ suspend fun scanUrl(
     val fetched = withContext(Dispatchers.IO) { fetchHeaders(url, method, customHeaders, requestBody) }
     val harvestJs = buildHarvestJs(jsPaths, domChecksJson)
 
+    val networkRequests = mutableListOf<NetworkRequest>()
+
     return try {
         withTimeout(SCAN_TIMEOUT_MS) {
             withContext(Dispatchers.Main) {
+                // Capture network requests made during page load into local list;
+                // after scan the callback is replaced by ViewModel to continue live capture.
+                (webView.tag as? WebViewClients)?.viewClient?.onRequest = { req ->
+                    synchronized(networkRequests) { networkRequests.add(req) }
+                }
                 onStage("Loading page…")
                 val json = loadAndInject(webView, url, harvestJs)
                 val httpOnlyCookies = parseCookieHeader(CookieManager.getInstance().getCookie(url) ?: "")
-                parseSignals(url, fetched.request, fetched.response, json, httpOnlyCookies, fetched.tls, fetched.richCookies)
+                parseSignals(url, fetched.request, fetched.response, json, httpOnlyCookies, fetched.tls, fetched.richCookies, networkRequests.toList())
             }
         }
     } catch (e: TimeoutCancellationException) {
@@ -328,22 +416,23 @@ suspend fun scanUrl(
 
 private suspend fun loadAndInject(webView: WebView, url: String, js: String): String =
     suspendCancellableCoroutine { cont ->
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView, url: String) {
-                view.evaluateJavascript(js) { result ->
-                    if (cont.isActive) cont.resume(result ?: "null")
-                }
+        val client = (webView.tag as? WebViewClients)?.viewClient ?: run {
+            // Safety fallback: should never happen after configureWebView
+            val wvc = EclipticWebViewClient()
+            webView.webViewClient = wvc
+            wvc
+        }
+        client.onPageReady = {
+            client.onPageReady = null
+            client.onPageError = null
+            webView.evaluateJavascript(js) { result ->
+                if (cont.isActive) cont.resume(result ?: "null")
             }
-
-            override fun onReceivedError(
-                view: WebView,
-                request: WebResourceRequest,
-                error: WebResourceError,
-            ) {
-                if (request.isForMainFrame && cont.isActive) {
-                    cont.resume("""{"error":"${error.description}"}""")
-                }
-            }
+        }
+        client.onPageError = { errMsg ->
+            client.onPageReady = null
+            client.onPageError = null
+            if (cont.isActive) cont.resume("""{"error":"${errMsg.replace("\"", "\\\"")}"}""")
         }
         webView.loadUrl(url)
     }
@@ -368,6 +457,7 @@ private fun parseSignals(
     httpOnlyCookies: Map<String, String>,
     tls: TlsResult? = null,
     richCookies: List<CookieInfo> = emptyList(),
+    networkRequests: List<NetworkRequest> = emptyList(),
 ): RawSignals {
     return try {
         val trimmed = json.trim().removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
@@ -408,7 +498,12 @@ private fun parseSignals(
         }
 
         val htmlSource = root.optString("htmlSource")
-        val scriptUrls = jsonArrayToList("scriptUrls")
+        val staticScriptUrls = jsonArrayToList("scriptUrls")
+        // Merge runtime-intercepted script/stylesheet URLs into scriptUrls for richer detection
+        val runtimeScriptUrls = networkRequests
+            .filter { it.type == "script" || it.type == "stylesheet" }
+            .map { it.url }
+        val allScriptUrls = (staticScriptUrls + runtimeScriptUrls).distinct()
         RawSignals(
             url = url,
             finalUrl = root.optString("finalUrl", url),
@@ -417,7 +512,7 @@ private fun parseSignals(
             globals = globals,
             jsProbe = jsProbe,
             metaTags = metas,
-            scriptUrls = scriptUrls,
+            scriptUrls = allScriptUrls,
             cssUrls = jsonArrayToList("cssUrls"),
             bodyClasses = root.optString("bodyClasses").split(" ").filter { it.isNotBlank() },
             htmlAttrs = htmlAttrs,
@@ -425,10 +520,11 @@ private fun parseSignals(
             title = root.optString("title"),
             cookies = allCookies,
             richCookies = richCookies,
-            detectedApis = detectApis(htmlSource, responseHeaders, scriptUrls),
+            detectedApis = detectApis(htmlSource, responseHeaders, allScriptUrls),
             domFound = domFound,
             domTree = root.optString("domTree", ""),
             tls = tls,
+            networkRequests = networkRequests,
         )
     } catch (e: Exception) {
         RawSignals(

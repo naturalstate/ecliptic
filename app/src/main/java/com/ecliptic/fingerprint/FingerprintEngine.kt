@@ -125,7 +125,7 @@ object FingerprintEngine {
     private fun compilePattern(raw: String): Pair<Regex, String?>? {
         return patternCache.getOrPut(raw) {
             val parts = raw.split("\\;")
-            val regexStr = parts[0].ifBlank { return@getOrPut null }
+            val regexStr = parts[0].ifBlank { "(?s).*" }  // empty pattern = presence check, match anything
             val vTpl = parts.drop(1)
                 .firstOrNull { it.startsWith("version:") }
                 ?.removePrefix("version:")

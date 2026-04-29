@@ -1,6 +1,8 @@
 package com.ecliptic
 
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,7 +16,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.ecliptic.poc.PocScanScreen
 import com.ecliptic.ui.theme.EclipticTheme
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
 
@@ -49,6 +53,14 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-apply window background on every resume to prevent white flash from WebView or system
+        val isDark = runBlocking { AppPreferences.darkThemeFlow(applicationContext).first() }
+        val bgColor = if (isDark) 0xFF0A0A0A.toInt() else 0xFFF5F5F5.toInt()
+        window.setBackgroundDrawable(ColorDrawable(bgColor))
     }
 
     override fun onNewIntent(intent: Intent) {

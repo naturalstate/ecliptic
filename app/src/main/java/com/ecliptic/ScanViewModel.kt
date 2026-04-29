@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.ecliptic.fingerprint.FingerprintEngine
 import com.ecliptic.fingerprint.TechDatabase
 import com.ecliptic.fingerprint.Technology
+import com.ecliptic.scanner.ConsoleMessage
+import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RepeaterResponse
 import com.ecliptic.scanner.scanUrl
@@ -39,6 +41,9 @@ data class ScanUiState(
     val wizardHeaders: List<Pair<String, String>> = emptyList(),
     val wizardBody: String = "",
     val wizardSent: Boolean = false,
+    // Live capture — continues after scan completes
+    val liveNetworkRequests: List<NetworkRequest> = emptyList(),
+    val consoleMessages: List<ConsoleMessage> = emptyList(),
 )
 
 class ScanViewModel(application: Application) : AndroidViewModel(application) {
@@ -202,6 +207,14 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         return results.sortedBy { it.name }
     }
 
+    fun appendNetworkRequest(req: NetworkRequest) {
+        _state.update { it.copy(liveNetworkRequests = it.liveNetworkRequests + req) }
+    }
+
+    fun appendConsoleMessage(msg: ConsoleMessage) {
+        _state.update { it.copy(consoleMessages = it.consoleMessages + msg) }
+    }
+
     fun onNewScan() {
         _state.update {
             it.copy(
@@ -211,6 +224,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 isSendingRequest = false, scanStage = "",
                 wizardSent = false, wizardHeaders = emptyList(),
                 wizardBody = "", wizardMethod = "GET", wizardUrl = "",
+                liveNetworkRequests = emptyList(), consoleMessages = emptyList(),
             )
         }
     }
