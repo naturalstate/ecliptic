@@ -28,8 +28,6 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
-private const val SCAN_TIMEOUT_MS = 20_000L
-
 private val ipv4Dns = object : Dns {
     override fun lookup(hostname: String): List<InetAddress> =
         Dns.SYSTEM.lookup(hostname).filter { it is Inet4Address }.ifEmpty {
@@ -42,6 +40,11 @@ internal val httpClient = OkHttpClient.Builder()
     .readTimeout(10, TimeUnit.SECONDS)
     .followRedirects(true)
     .dns(ipv4Dns)
+    .build()
+
+internal val httpClientNoRedirect = httpClient.newBuilder()
+    .followRedirects(false)
+    .followSslRedirects(false)
     .build()
 
 // Builds the full harvest JS injected after onPageFinished
@@ -375,6 +378,9 @@ suspend fun scanUrl(
     method: String = "GET",
     customHeaders: Map<String, String> = emptyMap(),
     requestBody: String = "",
+    timeoutMs: Long = 20_000L,
+    userAgent: String? = null,
+    followRedirects: Boolean = true,
     onStage: (String) -> Unit = {},
 ): RawSignals {
     val url = rawUrl.trim().let {
@@ -382,14 +388,16 @@ suspend fun scanUrl(
     }
 
     onStage("Fetching headers…")
-    val fetched = withContext(Dispatchers.IO) { fetchHeaders(url, method, customHeaders, requestBody) }
+    val client = if (followRedirects) httpClient else httpClientNoRedirect
+    val fetched = withContext(Dispatchers.IO) { fetchHeaders(url, method, customHeaders, requestBody, client) }
     val harvestJs = buildHarvestJs(jsPaths, domChecksJson)
 
     val networkRequests = mutableListOf<NetworkRequest>()
 
     return try {
-        withTimeout(SCAN_TIMEOUT_MS) {
+        withTimeout(timeoutMs) {
             withContext(Dispatchers.Main) {
+                if (userAgent != null) webView.settings.userAgentString = userAgent
                 // Capture network requests made during page load into local list;
                 // after scan the callback is replaced by ViewModel to continue live capture.
                 (webView.tag as? WebViewClients)?.viewClient?.onRequest = { req ->
@@ -409,7 +417,7 @@ suspend fun scanUrl(
             scriptUrls = emptyList(), cssUrls = emptyList(),
             bodyClasses = emptyList(), htmlAttrs = emptyMap(),
             htmlSource = "", title = "", tls = fetched.tls,
-            error = "Timed out after ${SCAN_TIMEOUT_MS / 1000}s"
+            error = "Timed out after ${timeoutMs / 1000}s"
         )
     }
 }
@@ -684,6 +692,7 @@ private fun fetchHeaders(
     method: String = "GET",
     customHeaders: Map<String, String> = emptyMap(),
     body: String = "",
+    client: OkHttpClient = httpClient,
 ): FetchedHeaders {
     return try {
         val reqBody: RequestBody? = when {
@@ -697,7 +706,7 @@ private fun fetchHeaders(
             .method(method, reqBody)
             .apply { customHeaders.forEach { (k, v) -> header(k, v) } }
             .build()
-        httpClient.newCall(request).execute().use { response ->
+        client.newCall(request).execute().use { response ->
             response.body?.close()
             val reqHeaders = buildMap<String, String> {
                 response.request.headers.forEach { (name, value) -> put(name, value) }

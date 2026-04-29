@@ -44,6 +44,8 @@ data class ScanUiState(
     // Live capture — continues after scan completes
     val liveNetworkRequests: List<NetworkRequest> = emptyList(),
     val consoleMessages: List<ConsoleMessage> = emptyList(),
+    // Lifetime scan count — used to trigger in-app review
+    val scanCount: Int = 0,
 )
 
 class ScanViewModel(application: Application) : AndroidViewModel(application) {
@@ -56,8 +58,9 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            val saved = AppPreferences.httpMethodFlow(appContext).first()
-            _state.update { it.copy(httpMethod = saved) }
+            val method = AppPreferences.httpMethodFlow(appContext).first()
+            val count  = AppPreferences.scanCountFlow(appContext).first()
+            _state.update { it.copy(httpMethod = method, scanCount = count) }
         }
     }
 
@@ -318,10 +321,16 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val db = dbDeferred.await()
+                val userAgent    = AppPreferences.userAgentFlow(appContext).first()
+                val followRedir  = AppPreferences.followRedirectsFlow(appContext).first()
+                val timeoutSec   = AppPreferences.scanTimeoutFlow(appContext).first()
                 val result = scanUrl(
                     webView, url,
                     db.allJsPaths(), db.allDomChecksJson(),
                     method, customHeaders, requestBody,
+                    timeoutMs       = timeoutSec * 1000L,
+                    userAgent       = userAgent,
+                    followRedirects = followRedir,
                 ) { stage ->
                     _state.update { it.copy(scanStage = stage) }
                 }
@@ -331,9 +340,11 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                     extractWpPlugins(result.htmlSource, result.scriptUrls + result.cssUrls)
                 } else emptyList()
                 android.util.Log.d("Ecliptic", "Detected: ${detected.size} techs, ${wpPlugins.size} WP plugins")
+                val newCount = AppPreferences.incrementScanCount(appContext)
                 _state.update {
                     it.copy(
                         isScanning = false, scanStage = "", hasScanned = true,
+                        scanCount = newCount,
                         signals = result, techs = detected + wpPlugins,
                         rawRequest = buildRawRequest(result, method),
                         wizardUrl = result.finalUrl,

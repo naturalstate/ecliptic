@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -139,6 +140,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.app.Activity
+import androidx.core.content.FileProvider
+import com.google.android.play.core.review.ReviewManagerFactory
+import com.ecliptic.AppPreferences
+import com.ecliptic.DEFAULT_SCAN_TIMEOUT_S
+import com.ecliptic.DEFAULT_UA
 import com.ecliptic.BuildConfig
 import com.ecliptic.ScanViewModel
 import com.ecliptic.fingerprint.Technology
@@ -155,6 +162,7 @@ import com.ecliptic.scanner.WebViewClients
 import com.ecliptic.scanner.fetchAsn
 import com.ecliptic.scanner.fetchReconFiles
 import com.ecliptic.scanner.fetchTextContent
+import com.ecliptic.scanner.generateHtmlReport
 import com.ecliptic.scanner.TlsResult
 import org.json.JSONArray
 import org.json.JSONObject
@@ -263,6 +271,7 @@ fun PocScanScreen(
     val wizardSent = state.wizardSent
     val liveNetworkRequests = state.liveNetworkRequests
     val consoleMessages = state.consoleMessages
+    val scanCount = state.scanCount
 
     var bottomTab    by remember { mutableIntStateOf(TAB_TECH) }
     var intelSubTab  by remember { mutableIntStateOf(0) }   // 0=HEADERS … 6=REQ/RES
@@ -307,26 +316,51 @@ fun PocScanScreen(
         clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.let { viewModel.onUrlChanged(it) }
     }
 
-    fun shareResults() {
-        val sb = StringBuilder()
-        sb.appendLine("Ecliptic scan: ${signals?.finalUrl ?: urlInput}")
-        sb.appendLine()
-        sb.appendLine("${techs.size} technologies detected")
-        sb.appendLine()
-        val grouped = techs.groupBy { it.categories.firstOrNull() ?: "Other" }.toSortedMap()
-        for ((cat, list) in grouped) {
-            sb.appendLine(cat)
-            for (tech in list.sortedBy { it.name }) {
-                val v = tech.version?.let { " $it" } ?: ""
-                sb.appendLine("  • ${tech.name}$v")
+    fun exportReport() {
+        val sig = signals ?: return
+        val html = generateHtmlReport(sig, techs, BuildConfig.VERSION_NAME)
+        try {
+            val dir = java.io.File(context.cacheDir, "reports").also { it.mkdirs() }
+            val file = java.io.File(dir, "ecliptic_report_${System.currentTimeMillis()}.html")
+            file.writeText(html)
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/html"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "Ecliptic report — ${sig.finalUrl}")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
+            context.startActivity(Intent.createChooser(intent, "Export report"))
+        } catch (e: Exception) {
+            // Fallback: share as plain text
+            val sb = StringBuilder()
+            sb.appendLine("Ecliptic scan: ${sig.finalUrl}")
+            sb.appendLine("${techs.size} technologies detected")
             sb.appendLine()
+            techs.groupBy { it.categories.firstOrNull() ?: "Other" }.toSortedMap()
+                .forEach { (cat, list) ->
+                    sb.appendLine(cat)
+                    list.sortedBy { it.name }.forEach { t ->
+                        sb.appendLine("  • ${t.name}${t.version?.let { " $it" } ?: ""}")
+                    }
+                }
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, sb.toString().trim())
+            }
+            context.startActivity(Intent.createChooser(intent, "Share scan results"))
         }
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, sb.toString().trim())
+    }
+
+    // In-app review trigger — after 3rd and 30th successful scan
+    LaunchedEffect(scanCount) {
+        if (scanCount == 3 || scanCount == 30) {
+            val activity = context as? Activity ?: return@LaunchedEffect
+            val manager = ReviewManagerFactory.create(context)
+            manager.requestReviewFlow().addOnCompleteListener { task ->
+                if (task.isSuccessful) manager.launchReviewFlow(activity, task.result)
+            }
         }
-        context.startActivity(Intent.createChooser(intent, "Share scan results"))
     }
 
     // Content key for AnimatedContent
@@ -379,8 +413,8 @@ fun PocScanScreen(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (hasScanned && !scanning) {
-                        IconButton(onClick = { shareResults() }, modifier = Modifier.size(40.dp)) {
-                            Icon(Icons.Filled.Share, "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        IconButton(onClick = { exportReport() }, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Filled.Share, "Export report", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
                         IconButton(onClick = { viewModel.onNewScan(); bottomTab = TAB_TECH }, modifier = Modifier.size(40.dp)) {
                             Icon(Icons.Filled.Add, "New scan", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
@@ -617,7 +651,7 @@ fun PocScanScreen(
             containerColor = MaterialTheme.colorScheme.surface,
             modifier = Modifier.fillMaxHeight(),
         ) {
-            AboutContent(isDarkTheme = isDarkTheme, onToggleTheme = onToggleTheme)
+            SettingsSheet(isDarkTheme = isDarkTheme, onToggleTheme = onToggleTheme)
         }
     }
 
@@ -741,6 +775,7 @@ private fun TechResultsContent(
         .entries
         .sortedWith(compareBy({ categoryPriority(it.key) }, { it.key }))
     val iconTint = MaterialTheme.colorScheme.onSurface
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -780,6 +815,27 @@ private fun TechResultsContent(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
+                IconButton(
+                    onClick = {
+                        val sb = buildString {
+                            techs.groupBy { it.categories.firstOrNull() ?: "Other" }
+                                .toSortedMap()
+                                .forEach { (cat, list) ->
+                                    appendLine(cat)
+                                    list.sortedBy { it.name }.forEach { t ->
+                                        appendLine("  • ${t.name}${t.version?.let { " $it" } ?: ""}")
+                                    }
+                                    appendLine()
+                                }
+                        }
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("techs", sb.trim()))
+                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(Icons.Filled.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                }
             }
             Spacer(modifier = Modifier.height(8.dp))
         }
@@ -2846,6 +2902,7 @@ private fun ConsoleContent(
     val entries = remember { mutableStateOf<List<ConsoleEntry>>(emptyList()) }
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
+    var lastCmd by remember { mutableStateOf("") }
 
     LaunchedEffect(messages.size) {
         val already = entries.value.count { it is ConsoleEntry.PageMsg }
@@ -2861,17 +2918,25 @@ private fun ConsoleContent(
 
     fun runCmd(cmd: String) {
         if (cmd.isBlank()) return
+        lastCmd = cmd
         input = ""
         entries.value = entries.value + ConsoleEntry.UserCmd(cmd)
-        evalJs(cmd) { raw ->
+        // Wrap in eval() so statements and multi-expression work, not just expressions
+        val escaped = cmd
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "")
+            .replace("\t", "\\t")
+        val wrapped = """(function(){try{var __r=eval("$escaped");return __r===undefined?'undefined':__r===null?'null':typeof __r==='object'?JSON.stringify(__r,null,2):String(__r);}catch(e){return 'Uncaught '+e;}})()"""
+        evalJs(wrapped) { raw ->
             val result = raw ?: "undefined"
             val clean = result
                 .removeSurrounding("\"")
                 .replace("\\n", "\n")
                 .replace("\\\"", "\"")
                 .replace("\\\\", "\\")
-            val isErr = result.startsWith("\"Uncaught") || result.startsWith("\"ReferenceError") ||
-                result.startsWith("\"TypeError") || result.startsWith("\"SyntaxError")
+            val isErr = clean.startsWith("Uncaught")
             entries.value = entries.value + ConsoleEntry.CmdResult(clean, isErr)
         }
     }
@@ -2969,6 +3034,18 @@ private fun ConsoleContent(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            IconButton(
+                onClick = { if (lastCmd.isNotBlank()) input = lastCmd },
+                modifier = Modifier.size(28.dp),
+                enabled = lastCmd.isNotBlank(),
+            ) {
+                Icon(
+                    Icons.Filled.ArrowUpward,
+                    "Previous command",
+                    tint = if (lastCmd.isNotBlank()) Teal else Color(0xFF3A3A4A),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
             Text(
                 ">",
                 color = Teal,
@@ -3466,11 +3543,261 @@ private fun RepeaterResponsePanel(
 
 // ─── Settings bottom sheet ────────────────────────────────────────────────────
 
+private val UA_PRESETS = listOf(
+    "Android Chrome" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+    "Chrome Desktop" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Firefox Desktop" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    "Safari (macOS)" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+    "Googlebot" to "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "Custom" to "",
+)
+
+private val TIMEOUT_OPTIONS = listOf(10, 15, 20, 30)
+
 @Composable
-private fun AboutContent(
+private fun SettingsSheet(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var selectedTab by remember { mutableIntStateOf(0) }
+
+    val userAgent by AppPreferences.userAgentFlow(context).collectAsStateWithLifecycle(DEFAULT_UA)
+    val followRedirects by AppPreferences.followRedirectsFlow(context).collectAsStateWithLifecycle(true)
+    val scanTimeout by AppPreferences.scanTimeoutFlow(context).collectAsStateWithLifecycle(DEFAULT_SCAN_TIMEOUT_S)
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Tab row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+        ) {
+            listOf("SETTINGS", "HELP", "ABOUT").forEachIndexed { i, label ->
+                val selected = i == selectedTab
+                TextButton(
+                    onClick = { selectedTab = i },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        label,
+                        fontSize = 12.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (selected) Teal else MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 0.08.em,
+                    )
+                }
+                if (selected) {
+                    // underline indicator — drawn via box below
+                }
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+        when (selectedTab) {
+            0 -> SettingsTabContent(
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
+                userAgent = userAgent,
+                followRedirects = followRedirects,
+                scanTimeout = scanTimeout,
+                onUaChange = { scope.launch { AppPreferences.setUserAgent(context, it) } },
+                onFollowRedirectsChange = { scope.launch { AppPreferences.setFollowRedirects(context, it) } },
+                onTimeoutChange = { scope.launch { AppPreferences.setScanTimeout(context, it) } },
+            )
+            1 -> HelpTabContent()
+            2 -> AboutTabContent()
+        }
+    }
+}
+
+@Composable
+private fun SettingsTabContent(
     isDarkTheme: Boolean,
     onToggleTheme: () -> Unit,
+    userAgent: String,
+    followRedirects: Boolean,
+    scanTimeout: Int,
+    onUaChange: (String) -> Unit,
+    onFollowRedirectsChange: (Boolean) -> Unit,
+    onTimeoutChange: (Int) -> Unit,
 ) {
+    val selectedPreset = UA_PRESETS.indexOfFirst { it.second == userAgent }
+        .let { if (it < 0) UA_PRESETS.lastIndex else it } // "Custom" if no match
+
+    var customUaText by remember(userAgent) {
+        mutableStateOf(if (selectedPreset == UA_PRESETS.lastIndex) userAgent else "")
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        // Dark mode
+        SettingRow(label = "Appearance") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    if (isDarkTheme) Icons.Filled.DarkMode else Icons.Filled.LightMode,
+                    null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp),
+                )
+                Text(if (isDarkTheme) "Dark" else "Light", color = MaterialTheme.colorScheme.onBackground, fontSize = 13.sp)
+                Switch(
+                    checked = isDarkTheme,
+                    onCheckedChange = { onToggleTheme() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Navy, checkedTrackColor = Teal,
+                        uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.outline,
+                    ),
+                )
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
+
+        // User Agent
+        Text("User Agent", color = MaterialTheme.colorScheme.onBackground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            itemsIndexed(UA_PRESETS) { i, (name, ua) ->
+                val isSelected = i == selectedPreset
+                Surface(
+                    onClick = {
+                        if (i != UA_PRESETS.lastIndex) {
+                            onUaChange(ua)
+                            customUaText = ""
+                        }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isSelected) Teal.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, if (isSelected) Teal else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                ) {
+                    Text(
+                        name,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) Teal else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        }
+        if (selectedPreset == UA_PRESETS.lastIndex || (selectedPreset >= 0 && selectedPreset < UA_PRESETS.lastIndex).not()) {
+            Spacer(Modifier.height(6.dp))
+            OutlinedTextField(
+                value = customUaText,
+                onValueChange = {
+                    customUaText = it
+                    onUaChange(it)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Custom user-agent string…", fontSize = 12.sp) },
+                textStyle = TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Teal,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                ),
+                maxLines = 3,
+            )
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
+
+        // Follow redirects
+        SettingRow(label = "Follow redirects") {
+            Switch(
+                checked = followRedirects,
+                onCheckedChange = onFollowRedirectsChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Navy, checkedTrackColor = Teal,
+                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.outline,
+                ),
+            )
+        }
+        Text(
+            "When disabled, scan stops at the first redirect and fingerprints that response.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+        )
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
+
+        // Scan timeout
+        Text("Scan timeout (current: ${scanTimeout}s)", color = MaterialTheme.colorScheme.onBackground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TIMEOUT_OPTIONS.forEach { t ->
+                val isSelected = t == scanTimeout
+                Surface(
+                    onClick = { onTimeoutChange(t) },
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isSelected) Teal.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, if (isSelected) Teal else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                ) {
+                    Text(
+                        "${t}s",
+                        fontSize = 13.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) Teal else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun SettingRow(label: String, content: @Composable () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.onBackground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        content()
+    }
+}
+
+@Composable
+private fun HelpTabContent() {
+    val helpItems = listOf(
+        "No results after scan" to "The site may block automated browsers or require authentication. Try a different URL or disable redirect following.",
+        "Console SyntaxError" to "Use single-line JS expressions: document.title, window.location.href. Multi-statement eval now supported — try: let x = 5; x",
+        "Certificate / TLS errors" to "The site has an invalid or self-signed certificate. The scan continues with limited data; TLS section will show the error.",
+        "App slows after many scans" to "Tap New Scan (+) to reset WebView state between sessions.",
+        "Share to Ecliptic missing" to "Open another app's share sheet, scroll to find Ecliptic. If missing, the app may need to be the target of a share intent at least once.",
+        "Shopify / WooCommerce not detected" to "Run the scan on the store's main product or home page, not a blog sub-path. Platform fingerprints exist in page globals.",
+        "White background flash" to "Occurs when switching from WebView-heavy screens. Fixed in v0.3.x — update if still happening.",
+        "Report export opens wrong app" to "The .html report file is shared via the system sheet. Tap 'Open with…' and choose Chrome or Firefox for best rendering.",
+        "Report to PDF" to "Open the .html report in Chrome → tap ⋮ → Print → Save as PDF.",
+        "User-Agent not applied" to "The User-Agent is applied on the next scan. If you changed it, run a new scan.",
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        helpItems.forEach { (q, a) ->
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(q, color = MaterialTheme.colorScheme.onBackground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(a, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 18.sp)
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun AboutTabContent() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -3480,73 +3807,35 @@ private fun AboutContent(
         Text(
             text = "ECLIPTIC",
             style = TextStyle(
-                fontFamily = SpaceGrotesk,
-                fontWeight = FontWeight.Bold,
-                fontSize = 28.sp,
-                letterSpacing = 0.12.em,
-                color = Teal,
+                fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold,
+                fontSize = 28.sp, letterSpacing = 0.12.em, color = Teal,
             ),
         )
         Text(text = "v${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(text = "Website Technology Scanner", color = MaterialTheme.colorScheme.onBackground, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(Modifier.height(12.dp))
+        Text("Website Technology Scanner", color = MaterialTheme.colorScheme.onBackground, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
         Text(
-            text = "Detects CMS, frameworks, analytics, CDN, and 1,500+ other technologies using an embedded browser and pattern matching against the Wappalyzer open-source database.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 13.sp,
-            lineHeight = 20.sp,
+            "Detects CMS, frameworks, analytics, CDN, and 1,500+ other technologies using an embedded browser and pattern matching against the Wappalyzer open-source database.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp,
         )
-
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(
-                    imageVector = if (isDarkTheme) Icons.Filled.DarkMode else Icons.Filled.LightMode,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
-                Text(text = if (isDarkTheme) "Dark mode" else "Light mode", color = MaterialTheme.colorScheme.onBackground, fontSize = 14.sp)
-            }
-            Switch(
-                checked = isDarkTheme,
-                onCheckedChange = { onToggleTheme() },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Navy,
-                    checkedTrackColor = Teal,
-                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    uncheckedTrackColor = MaterialTheme.colorScheme.outline,
-                ),
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-        Spacer(modifier = Modifier.height(8.dp))
-
-        AboutRow(label = "Fingerprint DB", value = "enthec/webappanalyzer")
-        AboutRow(label = "Detection layers", value = "HTTP · HTML · JS · DOM · Cookies")
-        AboutRow(label = "Min Android", value = "8.0 (API 26)")
+        Spacer(Modifier.height(8.dp))
+        AboutInfoRow("Fingerprint DB", "enthec/webappanalyzer")
+        AboutInfoRow("Detection layers", "HTTP · HTML · JS · DOM · Cookies · Network")
+        AboutInfoRow("Min Android", "8.0 (API 26)")
+        Spacer(Modifier.height(8.dp))
     }
 }
 
-
 @Composable
-private fun AboutRow(label: String, value: String) {
+private fun AboutInfoRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(text = label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        Text(text = value, color = MaterialTheme.colorScheme.onBackground, fontSize = 12.sp)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        Text(value, color = MaterialTheme.colorScheme.onBackground, fontSize = 12.sp)
     }
 }
