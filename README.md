@@ -37,7 +37,7 @@ Think of it as a pocket-sized combination of Wappalyzer, Burp Suite's repeater, 
 
 | Tech Detection | Security Headers | Network & DNS | HTTP Repeater |
 |:-:|:-:|:-:|:-:|
-| <img src="assets/screenshots/tech-results.png" width="180" /> | <img src="assets/screenshots/security-headers.png" width="180" /> | <img src="assets/screenshots/network-dns.png" width="180" /> | <img src="assets/screenshots/repeater.png" width="180" /> |
+| <img src="/screenshots/technologies_main_screen.jpg" width="180" /> | <img src="/screenshots/security_headers.jpg" width="180" /> | <img src="/screenshots/network_intel.jpg" width="180" /> | <img src="/screenshots/repeat_request_raw.jpg" width="180" /> |
 | Detect 1,500+ technologies across 30+ categories | Full security header audit with live scoring | TLS certificate, DNS records, ASN lookup | Send custom raw or wizard-built HTTP requests |
 
 </div>
