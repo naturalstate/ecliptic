@@ -762,12 +762,6 @@ private fun TechResultsContent(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                TextButton(
-                    onClick = { runCatching { uriHandler.openUri("https://web.archive.org/web/*/$url") } },
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                ) {
-                    Text("Archive.org →", color = Blue.copy(alpha = 0.7f), fontSize = 11.sp)
-                }
             }
             Spacer(modifier = Modifier.height(8.dp))
         }
@@ -1608,6 +1602,7 @@ private fun ReqResContent(
     }
 
     var searchQuery  by remember { mutableStateOf("") }
+    var expandedPane by remember { mutableStateOf<String?>(null) } // "req" | "res" | null
     val reqListState = rememberLazyListState()
     val resListState = rememberLazyListState()
     val scope        = rememberCoroutineScope()
@@ -1624,69 +1619,53 @@ private fun ReqResContent(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Toolbar
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Surface(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp)) {
-                BasicTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    singleLine = true,
-                    textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
-                    decorationBox = { inner ->
-                        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                            Box { if (searchQuery.isEmpty()) Text("Filter…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp); inner() }
-                        }
+        // Shared search bar
+        Surface(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp)) {
+            BasicTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                singleLine = true,
+                textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                decorationBox = { inner ->
+                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                        Box { if (searchQuery.isEmpty()) Text("Filter…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp); inner() }
+                    }
+                },
+            )
+        }
+
+        // Request pane — hidden when response is expanded
+        if (expandedPane != "res") {
+            Column(modifier = Modifier.weight(1f)) {
+                ReqResPaneHeader(
+                    label = "REQUEST",
+                    labelColor = Teal,
+                    expanded = expandedPane == "req",
+                    listState = reqListState,
+                    lines = reqLines,
+                    scope = scope,
+                    onToggleExpand = {
+                        val next = if (expandedPane == "req") null else "req"
+                        if (next != null && !isFullScreen) onToggleFullScreen()
+                        else if (next == null && isFullScreen) onToggleFullScreen()
+                        expandedPane = next
                     },
                 )
-            }
-            IconButton(onClick = onToggleFullScreen, modifier = Modifier.size(32.dp)) {
-                Icon(if (isFullScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-            }
-        }
-
-        // Request pane
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text("REQUEST", color = Teal, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
-                Row {
-                    IconButton(onClick = { scope.launch { reqListState.scrollToItem(0) } }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.VerticalAlignTop, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                HorizontalDivider(color = Teal.copy(alpha = 0.2f))
+                if (rawRequest.isBlank()) {
+                    Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        Text("No request captured", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
-                    IconButton(onClick = { scope.launch { if (reqListState.firstVisibleItemIndex > 0) reqListState.scrollToItem(maxOf(0, reqListState.firstVisibleItemIndex - 10)) } }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.KeyboardArrowUp, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                    }
-                    IconButton(onClick = { scope.launch { reqListState.scrollToItem(minOf(reqLines.lastIndex, reqListState.firstVisibleItemIndex + 10)) } }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                    }
-                    IconButton(onClick = { scope.launch { if (reqLines.isNotEmpty()) reqListState.scrollToItem(reqLines.lastIndex) } }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.VerticalAlignBottom, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                    }
-                }
-            }
-            HorizontalDivider(color = Teal.copy(alpha = 0.2f))
-            if (rawRequest.isBlank()) {
-                Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    Text("No request captured", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
-            } else {
-                SelectionContainer {
-                    LazyColumn(state = reqListState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp)) {
-                        items(reqLines) { (origIdx, line) ->
-                            val color = if (origIdx == 0) Teal else if (line.contains(':')) Blue else MaterialTheme.colorScheme.onSurface
-                            val highlighted = if (searchQuery.isNotBlank() && line.contains(searchQuery, ignoreCase = true)) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                            } else Color.Transparent
-                            Box(modifier = Modifier.fillMaxWidth().background(highlighted)) {
-                                Text(line, color = color, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                } else {
+                    SelectionContainer {
+                        LazyColumn(state = reqListState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp)) {
+                            items(reqLines) { (origIdx, line) ->
+                                val color = if (origIdx == 0) Teal else if (line.contains(':')) Blue else MaterialTheme.colorScheme.onSurface
+                                val highlighted = if (searchQuery.isNotBlank() && line.contains(searchQuery, ignoreCase = true)) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent
+                                Box(modifier = Modifier.fillMaxWidth().background(highlighted)) {
+                                    Text(line, color = color, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                }
                             }
                         }
                     }
@@ -1694,50 +1673,79 @@ private fun ReqResContent(
             }
         }
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        if (expandedPane == null) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-        // Response pane
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text("RESPONSE", color = Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
-                Row {
-                    IconButton(onClick = { scope.launch { resListState.scrollToItem(0) } }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.VerticalAlignTop, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+        // Response pane — hidden when request is expanded
+        if (expandedPane != "req") {
+            Column(modifier = Modifier.weight(1f)) {
+                ReqResPaneHeader(
+                    label = "RESPONSE",
+                    labelColor = Blue,
+                    expanded = expandedPane == "res",
+                    listState = resListState,
+                    lines = resLines,
+                    scope = scope,
+                    onToggleExpand = {
+                        val next = if (expandedPane == "res") null else "res"
+                        if (next != null && !isFullScreen) onToggleFullScreen()
+                        else if (next == null && isFullScreen) onToggleFullScreen()
+                        expandedPane = next
+                    },
+                )
+                HorizontalDivider(color = Blue.copy(alpha = 0.2f))
+                if (rawResponse.isBlank() || signals == null) {
+                    Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        Text("No response captured", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
-                    IconButton(onClick = { scope.launch { if (resListState.firstVisibleItemIndex > 0) resListState.scrollToItem(maxOf(0, resListState.firstVisibleItemIndex - 10)) } }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.KeyboardArrowUp, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                    }
-                    IconButton(onClick = { scope.launch { resListState.scrollToItem(minOf(resLines.lastIndex, resListState.firstVisibleItemIndex + 10)) } }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                    }
-                    IconButton(onClick = { scope.launch { if (resLines.isNotEmpty()) resListState.scrollToItem(resLines.lastIndex) } }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.VerticalAlignBottom, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                    }
-                }
-            }
-            HorizontalDivider(color = Blue.copy(alpha = 0.2f))
-            if (rawResponse.isBlank() || signals == null) {
-                Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    Text("No response captured", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
-            } else {
-                SelectionContainer {
-                    LazyColumn(state = resListState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp)) {
-                        items(resLines) { (origIdx, line) ->
-                            val color = if (origIdx == 0) Green else if (line.contains(':')) Blue else MaterialTheme.colorScheme.onSurface
-                            val highlighted = if (searchQuery.isNotBlank() && line.contains(searchQuery, ignoreCase = true)) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                            } else Color.Transparent
-                            Box(modifier = Modifier.fillMaxWidth().background(highlighted)) {
-                                Text(line, color = color, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                } else {
+                    SelectionContainer {
+                        LazyColumn(state = resListState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp)) {
+                            items(resLines) { (origIdx, line) ->
+                                val color = if (origIdx == 0) Green else if (line.contains(':')) Blue else MaterialTheme.colorScheme.onSurface
+                                val highlighted = if (searchQuery.isNotBlank() && line.contains(searchQuery, ignoreCase = true)) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent
+                                Box(modifier = Modifier.fillMaxWidth().background(highlighted)) {
+                                    Text(line, color = color, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReqResPaneHeader(
+    label: String,
+    labelColor: Color,
+    expanded: Boolean,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    lines: List<Pair<Int, String>>,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onToggleExpand: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, color = labelColor, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
+        Row {
+            IconButton(onClick = { scope.launch { listState.scrollToItem(0) } }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.VerticalAlignTop, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            }
+            IconButton(onClick = { scope.launch { listState.scrollToItem(maxOf(0, listState.firstVisibleItemIndex - 10)) } }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.KeyboardArrowUp, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            }
+            IconButton(onClick = { scope.launch { listState.scrollToItem(minOf(lines.lastIndex, listState.firstVisibleItemIndex + 10)) } }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            }
+            IconButton(onClick = { scope.launch { if (lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex) } }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.VerticalAlignBottom, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            }
+            IconButton(onClick = onToggleExpand, modifier = Modifier.size(28.dp)) {
+                Icon(if (expanded) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, null, tint = labelColor, modifier = Modifier.size(16.dp))
             }
         }
     }
@@ -2686,6 +2694,8 @@ private fun RepeaterContent(
 
     var wizardNewKey by remember { mutableStateOf("") }
     var wizardNewValue by remember { mutableStateOf("") }
+    var rawExpandedPane by remember { mutableStateOf<String?>(null) }  // "req" | "res" | null
+    var wizResponseExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
         // Mode toggle row
@@ -2725,42 +2735,82 @@ private fun RepeaterContent(
 
         if (!isRepeaterWizard) {
             // ── RAW mode: editable request (top) + response (bottom) ─────────
-            Text("REQUEST", color = Teal, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em, modifier = Modifier.padding(bottom = 4.dp))
-            OutlinedTextField(
-                value = rawRequest,
-                onValueChange = onRawRequestChanged,
-                modifier = Modifier.fillMaxWidth().weight(0.42f),
-                enabled = !isSendingRequest,
-                colors = tfColors,
-                shape = RoundedCornerShape(10.dp),
-                textStyle = monoStyle,
-                maxLines = Int.MAX_VALUE,
-            )
-            Spacer(Modifier.height(6.dp))
-            Button(
-                onClick = { onSendRaw(rawRequest) },
-                enabled = !isSendingRequest && rawRequest.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Teal, contentColor = Navy,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(vertical = 10.dp),
-            ) {
-                if (isSendingRequest) {
-                    CircularProgressIndicator(Modifier.size(14.dp), color = Navy, strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Sending…", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                } else {
-                    Text("SEND", fontWeight = FontWeight.Bold, letterSpacing = 0.08.em, fontSize = 13.sp)
+            if (rawExpandedPane != "res") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("REQUEST", color = Teal, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
+                    IconButton(
+                        onClick = {
+                            val next = if (rawExpandedPane == "req") null else "req"
+                            if (next != null && !isFullScreen) onToggleFullScreen()
+                            else if (next == null && isFullScreen) onToggleFullScreen()
+                            rawExpandedPane = next
+                        },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(if (rawExpandedPane == "req") Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, null, tint = Teal, modifier = Modifier.size(16.dp))
+                    }
                 }
+                OutlinedTextField(
+                    value = rawRequest,
+                    onValueChange = onRawRequestChanged,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    enabled = !isSendingRequest,
+                    colors = tfColors,
+                    shape = RoundedCornerShape(10.dp),
+                    textStyle = monoStyle,
+                    maxLines = Int.MAX_VALUE,
+                )
+                Spacer(Modifier.height(6.dp))
             }
-            Spacer(Modifier.height(6.dp))
-            Text("RESPONSE", color = Teal, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em, modifier = Modifier.padding(bottom = 4.dp))
-            Box(modifier = Modifier.fillMaxWidth().weight(0.58f)) {
-                RepeaterResponsePanel(response = repeaterResponse, isSending = isSendingRequest)
+            if (rawExpandedPane == null) {
+                Button(
+                    onClick = { onSendRaw(rawRequest) },
+                    enabled = !isSendingRequest && rawRequest.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Teal, contentColor = Navy,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(vertical = 10.dp),
+                ) {
+                    if (isSendingRequest) {
+                        CircularProgressIndicator(Modifier.size(14.dp), color = Navy, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Sending…", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    } else {
+                        Text("SEND", fontWeight = FontWeight.Bold, letterSpacing = 0.08.em, fontSize = 13.sp)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+            if (rawExpandedPane != "req") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("RESPONSE", color = Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
+                    IconButton(
+                        onClick = {
+                            val next = if (rawExpandedPane == "res") null else "res"
+                            if (next != null && !isFullScreen) onToggleFullScreen()
+                            else if (next == null && isFullScreen) onToggleFullScreen()
+                            rawExpandedPane = next
+                        },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(if (rawExpandedPane == "res") Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, null, tint = Blue, modifier = Modifier.size(16.dp))
+                    }
+                }
+                Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    RepeaterResponsePanel(response = repeaterResponse, isSending = isSendingRequest)
+                }
             }
         } else {
             // ── WIZARD mode ───────────────────────────────────────────────────
@@ -2902,7 +2952,7 @@ private fun RepeaterContent(
                 }
             } else {
                 // Collapsed wizard: compact summary card + response
-                Surface(
+                if (!wizResponseExpanded) Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surface,
                     shape = RoundedCornerShape(10.dp),
@@ -2933,8 +2983,25 @@ private fun RepeaterContent(
                         }
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                Text("RESPONSE", color = Teal, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em, modifier = Modifier.padding(bottom = 4.dp))
+                if (!wizResponseExpanded) Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("RESPONSE", color = Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
+                    IconButton(
+                        onClick = {
+                            val next = !wizResponseExpanded
+                            if (next && !isFullScreen) onToggleFullScreen()
+                            else if (!next && isFullScreen) onToggleFullScreen()
+                            wizResponseExpanded = next
+                        },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(if (wizResponseExpanded) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, null, tint = Blue, modifier = Modifier.size(16.dp))
+                    }
+                }
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     RepeaterResponsePanel(response = repeaterResponse, isSending = isSendingRequest)
                 }

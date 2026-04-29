@@ -1,12 +1,7 @@
 *.iml
 .gradle
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+/.idea/
 .DS_Store
 /build
 /captures
@@ -15,3 +10,11 @@
 local.properties
 *.bak
 app/build/
+
+# Claude Code memory & session logs
+.claude/
+
+# Prototype / scratch files
+stacksniff-mvp_claude.html
+stacksniff-mvp_gemini.html
+TODO.md
