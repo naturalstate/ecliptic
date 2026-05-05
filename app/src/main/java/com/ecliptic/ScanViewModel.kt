@@ -21,6 +21,18 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+data class ScanSnapshot(
+    val timestamp: Long = System.currentTimeMillis(),
+    val url: String,
+    val signals: RawSignals,
+    val techs: List<Technology>,
+    val networkRequests: List<NetworkRequest>,
+    val consoleMessages: List<ConsoleMessage>,
+    val rawRequest: String,
+    val wizardUrl: String,
+    val wizardHeaders: List<Pair<String, String>>,
+)
+
 data class ScanUiState(
     val urlInput: String = "https://wordpress.org",
     val isScanning: Boolean = false,
@@ -46,6 +58,9 @@ data class ScanUiState(
     val consoleMessages: List<ConsoleMessage> = emptyList(),
     // Lifetime scan count — used to trigger in-app review
     val scanCount: Int = 0,
+    // Scan history navigation
+    val historySize: Int = 0,
+    val historyPosition: Int = 0,
 )
 
 class ScanViewModel(application: Application) : AndroidViewModel(application) {
@@ -56,11 +71,80 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(ScanUiState())
     val state: StateFlow<ScanUiState> = _state.asStateFlow()
 
+    private val snapshots = mutableListOf<ScanSnapshot>()
+    private var currentSnapshotIdx = -1
+
+    private val PAYMENT_CARD_BRANDS = setOf(
+        "Visa", "Mastercard", "American Express", "Discover", "JCB",
+        "Diners Club", "UnionPay", "Maestro", "Visa Checkout", "Masterpass",
+        "American Express Checkout",
+    )
+
+    private fun groupPaymentCards(techs: List<Technology>): List<Technology> {
+        val cards = techs.filter { it.name in PAYMENT_CARD_BRANDS }
+        if (cards.size < 2) return techs
+        val merged = Technology(
+            name = "Major Credit Cards",
+            categories = listOf("Payment Processors"),
+            icon = null,
+            website = null,
+            version = cards.joinToString(", ") { it.name },
+            confidence = cards.minOf { it.confidence },
+            detectionMethod = "Grouped",
+            matchedValue = cards.joinToString(", ") { it.name },
+        )
+        return techs.filter { it.name !in PAYMENT_CARD_BRANDS } + merged
+    }
+
+    fun navigateHistory(delta: Int) {
+        val newIdx = (currentSnapshotIdx + delta).coerceIn(0, snapshots.lastIndex)
+        if (newIdx == currentSnapshotIdx) return
+        currentSnapshotIdx = newIdx
+        val snap = snapshots[newIdx]
+        _state.update {
+            it.copy(
+                urlInput = snap.url,
+                signals = snap.signals,
+                techs = snap.techs,
+                liveNetworkRequests = snap.networkRequests,
+                consoleMessages = snap.consoleMessages,
+                rawRequest = snap.rawRequest,
+                wizardUrl = snap.wizardUrl,
+                wizardHeaders = snap.wizardHeaders,
+                hasScanned = true,
+                historyPosition = newIdx + 1,
+            )
+        }
+    }
+
     init {
         viewModelScope.launch {
             val method = AppPreferences.httpMethodFlow(appContext).first()
             val count  = AppPreferences.scanCountFlow(appContext).first()
             _state.update { it.copy(httpMethod = method, scanCount = count) }
+        }
+        viewModelScope.launch {
+            val loaded = ScanHistoryStore.loadAll(appContext)
+            if (loaded.isNotEmpty()) {
+                snapshots.addAll(loaded)
+                currentSnapshotIdx = snapshots.lastIndex
+                val latest = snapshots.last()
+                _state.update {
+                    it.copy(
+                        urlInput = latest.url,
+                        signals = latest.signals,
+                        techs = latest.techs,
+                        liveNetworkRequests = latest.networkRequests,
+                        consoleMessages = latest.consoleMessages,
+                        rawRequest = latest.rawRequest,
+                        wizardUrl = latest.wizardUrl,
+                        wizardHeaders = latest.wizardHeaders,
+                        hasScanned = true,
+                        historySize = snapshots.size,
+                        historyPosition = snapshots.size,
+                    )
+                }
+            }
         }
     }
 
@@ -228,6 +312,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 wizardSent = false, wizardHeaders = emptyList(),
                 wizardBody = "", wizardMethod = "GET", wizardUrl = "",
                 liveNetworkRequests = emptyList(), consoleMessages = emptyList(),
+                // historySize and historyPosition preserved so arrows remain visible
             )
         }
     }
@@ -324,6 +409,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 val userAgent    = AppPreferences.userAgentFlow(appContext).first()
                 val followRedir  = AppPreferences.followRedirectsFlow(appContext).first()
                 val timeoutSec   = AppPreferences.scanTimeoutFlow(appContext).first()
+                val saveHtml     = AppPreferences.saveHtmlSourceFlow(appContext).first()
                 val result = scanUrl(
                     webView, url,
                     db.allJsPaths(), db.allDomChecksJson(),
@@ -339,19 +425,37 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 val wpPlugins = if (detected.any { it.name.equals("WordPress", ignoreCase = true) }) {
                     extractWpPlugins(result.htmlSource, result.scriptUrls + result.cssUrls)
                 } else emptyList()
-                android.util.Log.d("Ecliptic", "Detected: ${detected.size} techs, ${wpPlugins.size} WP plugins")
+                val allTechs = groupPaymentCards(detected + wpPlugins)
+                android.util.Log.d("Ecliptic", "Detected: ${allTechs.size} techs, ${wpPlugins.size} WP plugins")
                 val newCount = AppPreferences.incrementScanCount(appContext)
+                val rawReq = buildRawRequest(result, method)
+                val wizHeaders = result.requestHeaders.entries.map { e -> e.key to e.value }
+                val snapshot = ScanSnapshot(
+                    url = result.finalUrl,
+                    signals = result,
+                    techs = allTechs,
+                    networkRequests = emptyList(),
+                    consoleMessages = emptyList(),
+                    rawRequest = rawReq,
+                    wizardUrl = result.finalUrl,
+                    wizardHeaders = wizHeaders,
+                )
+                snapshots.add(snapshot)
+                currentSnapshotIdx = snapshots.lastIndex
+                ScanHistoryStore.save(appContext, snapshot, saveHtml)
                 _state.update {
                     it.copy(
                         isScanning = false, scanStage = "", hasScanned = true,
                         scanCount = newCount,
-                        signals = result, techs = detected + wpPlugins,
-                        rawRequest = buildRawRequest(result, method),
+                        signals = result, techs = allTechs,
+                        rawRequest = rawReq,
                         wizardUrl = result.finalUrl,
-                        wizardHeaders = result.requestHeaders.entries.map { e -> e.key to e.value },
+                        wizardHeaders = wizHeaders,
                         wizardMethod = "GET",
                         wizardBody = "",
                         wizardSent = false,
+                        historySize = snapshots.size,
+                        historyPosition = snapshots.size,
                     )
                 }
             } catch (e: Exception) {

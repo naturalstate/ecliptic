@@ -23,6 +23,7 @@ object AppPreferences {
     private val FOLLOW_REDIRECTS = booleanPreferencesKey("follow_redirects")
     private val SCAN_TIMEOUT_S   = intPreferencesKey("scan_timeout_s")
     private val SCAN_COUNT       = intPreferencesKey("scan_count")
+    private val SAVE_HTML_SOURCE = booleanPreferencesKey("save_html_source")
 
     fun darkThemeFlow(context: Context): Flow<Boolean> =
         context.dataStore.data.map { it[DARK_THEME] ?: true }
@@ -41,6 +42,13 @@ object AppPreferences {
 
     fun scanCountFlow(context: Context): Flow<Int> =
         context.dataStore.data.map { it[SCAN_COUNT] ?: 0 }
+
+    fun saveHtmlSourceFlow(context: Context): Flow<Boolean> =
+        context.dataStore.data.map { it[SAVE_HTML_SOURCE] ?: false }
+
+    suspend fun setSaveHtmlSource(context: Context, save: Boolean) {
+        context.dataStore.edit { it[SAVE_HTML_SOURCE] = save }
+    }
 
     suspend fun setDarkTheme(context: Context, dark: Boolean) {
         context.dataStore.edit { it[DARK_THEME] = dark }

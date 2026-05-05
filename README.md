@@ -57,6 +57,9 @@ Think of it as a pocket-sized combination of Wappalyzer, Burp Suite's repeater, 
 🔁  HTTP Repeater                →  RAW and wizard modes, fullscreen response
 👁️  Source viewer                →  Syntax-highlighted HTML, JS globals, DOM tree
 📤  Chrome Share integration     →  Share any URL from Chrome → instant scan
+🕑  Scan history                 →  Persistent across sessions, ← → navigation
+📋  One-tap copy                 →  Copy any tab's data to clipboard instantly
+📊  HTML report export           →  Full scan exported as shareable HTML file
 ```
 
 ---
@@ -74,6 +77,8 @@ Powered by the [enthec/webappanalyzer](https://github.com/enthec/webappanalyzer)
 | **JS Runtime** | Live JavaScript global probing via injected scripts in Chromium WebView |
 
 **Detected categories include:** CMS, JavaScript Frameworks, CSS Frameworks, UI Libraries, Analytics, Tag Managers, CDN, Web Servers, Databases, Programming Languages, Caching, Authentication, Ecommerce, Video, Mapping, Advertising, A/B Testing, and more.
+
+**Smart grouping:** Major CMS platforms (WordPress, Shopify, Drupal, Joomla, CraftCMS, Magento, etc.) are sorted to the top of their category. Payment card brands (Visa, Mastercard, Amex, Discover, etc.) are grouped into a single "Major Credit Cards" entry rather than listed individually.
 
 ---
 
@@ -169,6 +174,26 @@ Full `Set-Cookie` header parsing — not just name/value:
 - **HTML Source** — Syntax-highlighted HTML viewer with search, remote CSS/JS file loading, save to Downloads, fullscreen mode
 - **JS Globals** — Every `window.*` global detected at runtime, including framework markers, config objects, feature flags
 - **DOM Tree** — Collapsible interactive DOM tree with tag names, IDs, classes, attributes
+- **Network Requests** — All requests captured during page load, filterable by type (script, XHR, image, font, media)
+- **Console** — Live JS console with eval support — run JavaScript in the page context directly from the app
+
+---
+
+### 🕑 Scan History
+
+Every scan is automatically saved to device storage and survives app restarts.
+
+- **Persistent storage** — up to 50 scans saved as JSON files in internal storage (auto-pruned oldest)
+- **← → navigation** — arrows appear in the header once you have multiple scans; tap to browse previous results
+- **Full fidelity** — saved scans restore tech list, headers, cookies, TLS, APIs, and network requests
+- **Save HTML source** — optional setting (off by default) to also persist raw HTML (~500KB extra per scan)
+
+---
+
+### 📋 One-Tap Copy & Export
+
+- **Copy buttons** on every tab — Headers, Security Headers, Cookies, APIs, JS Globals, Network Requests, Console
+- **Export report** — tap the share icon in the header after any scan to export a full styled HTML report covering all findings
 
 ---
 
@@ -293,6 +318,10 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 
 ## Roadmap
 
+- [x] Scan history — persistent across sessions with ← → navigation
+- [x] Export scan report — full HTML report via share sheet
+- [x] Copy to clipboard — one-tap copy on every tab
+- [ ] Scan comparison — diff two saved scans side-by-side
 - [ ] WebSocket and SSE detection (Network tab)
 - [ ] HTTP/2 and HTTP/3 protocol detection
 - [ ] Service Worker / PWA detection
@@ -301,8 +330,6 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 - [ ] Auth mechanism hints (JWT, OAuth, OIDC)
 - [ ] Subresource Integrity audit
 - [ ] cURL import in Repeater
-- [ ] Scan history (Room DB)
-- [ ] Export scan report (JSON / PDF)
 - [ ] Play Store release
 
 ---

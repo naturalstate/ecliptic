@@ -53,6 +53,8 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.OpenInBrowser
@@ -225,6 +227,13 @@ private fun categoryPriority(category: String): Int = when {
     else                                                      -> 25
 }
 
+private fun techNamePriority(name: String): Int = when (name.lowercase()) {
+    "wordpress", "shopify", "drupal", "joomla", "magento", "woocommerce",
+    "craftcms", "craft cms", "prestashop", "opencart", "squarespace", "wix",
+    "webflow", "ghost", "typo3", "contao", "expressionengine" -> 0
+    else -> 10
+}
+
 private val SECURITY_HEADERS = linkedMapOf(
     "content-security-policy"   to "CSP",
     "strict-transport-security" to "HSTS",
@@ -233,6 +242,76 @@ private val SECURITY_HEADERS = linkedMapOf(
     "referrer-policy"           to "Referrer-Policy",
     "permissions-policy"        to "Permissions-Policy",
     "cross-origin-opener-policy" to "COOP",
+)
+
+// Common admin/default paths per detected technology (path or :port[/path])
+private val TECH_ADMIN_PATHS: Map<String, List<String>> = mapOf(
+    // CMS
+    "WordPress"      to listOf("/wp-admin", "/wp-login.php", "/wp-content/", "/xmlrpc.php"),
+    "WooCommerce"    to listOf("/wp-admin", "/wp-admin/admin.php?page=wc-admin"),
+    "Drupal"         to listOf("/admin", "/user/login", "/admin/config"),
+    "Joomla"         to listOf("/administrator", "/administrator/index.php"),
+    "Magento"        to listOf("/admin", "/index.php/admin"),
+    "PrestaShop"     to listOf("/admin", "/adminXXXX"),
+    "OpenCart"       to listOf("/admin", "/admin/index.php"),
+    "TYPO3"          to listOf("/typo3", "/typo3/backend.php"),
+    "Shopify"        to listOf("/admin", "/admin/login"),
+    "Wix"            to listOf("/dashboard"),
+    "Squarespace"    to listOf("/config"),
+    "Ghost"          to listOf("/ghost", "/ghost/signin"),
+    "Webflow"        to listOf("/admin"),
+    "Craft CMS"      to listOf("/admin", "/index.php?p=admin"),
+    "CraftCMS"       to listOf("/admin", "/index.php?p=admin"),
+    "Contao"         to listOf("/contao", "/contao/login"),
+    // Database / admin panels
+    "MySQL"          to listOf("/phpmyadmin", "/pma", "/mysql"),
+    "phpMyAdmin"     to listOf("/phpmyadmin", "/pma", "/phpmyadmin/index.php"),
+    "PostgreSQL"     to listOf("/phppgadmin", ":5432"),
+    "MongoDB"        to listOf(":27017", ":28017"),
+    "Redis"          to listOf(":6379"),
+    "Elasticsearch"  to listOf(":9200", ":9200/_cat/indices", ":9200/_cluster/health"),
+    "Kibana"         to listOf(":5601", ":5601/app/kibana"),
+    "Grafana"        to listOf(":3000", ":3000/login"),
+    "InfluxDB"       to listOf(":8086", ":8086/query"),
+    "Adminer"        to listOf("/adminer", "/adminer.php", "/database.php"),
+    // Web server status
+    "Apache"         to listOf("/server-status", "/server-info"),
+    "Nginx"          to listOf("/nginx_status"),
+    // Hosting control panels
+    "cPanel"         to listOf(":2082", ":2083", "/cpanel"),
+    "Plesk"          to listOf(":8443", ":8880", "/login_up.php3"),
+    "WHM"            to listOf(":2086", ":2087"),
+    "DirectAdmin"    to listOf(":2222", "/CMD_LOGIN"),
+    "Webmin"         to listOf(":10000"),
+    "ISPConfig"      to listOf(":8080", ":8080/index.php"),
+    // CI / Dev tools
+    "Jenkins"        to listOf(":8080", ":8080/login", "/jenkins"),
+    "GitLab"         to listOf("/users/sign_in", "/admin"),
+    "Gitea"          to listOf(":3000", "/user/login"),
+    "SonarQube"      to listOf(":9000", ":9000/sessions/new"),
+    "RabbitMQ"       to listOf(":15672", ":15672/#/login"),
+    "Portainer"      to listOf(":9000", ":9443"),
+    "Traefik"        to listOf(":8080/dashboard", ":8080/api/rawdata"),
+    // PHP
+    "PHP"            to listOf("/phpmyadmin", "/info.php", "/phpinfo.php", "/test.php"),
+    "Laravel"        to listOf("/admin", "/_debugbar", "/horizon", "/telescope"),
+    "Symfony"        to listOf("/_profiler", "/app_dev.php"),
+    "CodeIgniter"    to listOf("/admin"),
+    // Python / Node / Java
+    "Django"         to listOf("/admin", "/admin/login"),
+    "Flask"          to listOf("/admin"),
+    "Spring"         to listOf("/actuator", "/actuator/health", "/actuator/env"),
+    "Spring Boot"    to listOf("/actuator", "/actuator/health", "/actuator/env"),
+    "Express"        to listOf("/admin"),
+    "Node.js"        to listOf(":3000", ":8000"),
+    // Monitoring
+    "Prometheus"     to listOf(":9090", ":9090/graph"),
+    "Grafana"        to listOf(":3000", ":3000/login"),
+    // Forums / CRM
+    "phpBB"          to listOf("/admin/index.php", "/adm/"),
+    "Discourse"      to listOf("/admin"),
+    "vBulletin"      to listOf("/admincp"),
+    "SMF"            to listOf("/admin.php"),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -272,6 +351,8 @@ fun PocScanScreen(
     val liveNetworkRequests = state.liveNetworkRequests
     val consoleMessages = state.consoleMessages
     val scanCount = state.scanCount
+    val historySize = state.historySize
+    val historyPosition = state.historyPosition
 
     var bottomTab    by remember { mutableIntStateOf(TAB_TECH) }
     var intelSubTab  by remember { mutableIntStateOf(0) }   // 0=HEADERS … 6=REQ/RES
@@ -412,6 +493,20 @@ fun PocScanScreen(
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (historySize > 1) {
+                        IconButton(onClick = { viewModel.navigateHistory(-1); bottomTab = TAB_TECH }, enabled = historyPosition > 1, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous scan", tint = if (historyPosition > 1) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), modifier = Modifier.size(20.dp))
+                        }
+                        Text(
+                            text = "$historyPosition / $historySize",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            fontFamily = SpaceGrotesk,
+                        )
+                        IconButton(onClick = { viewModel.navigateHistory(1); bottomTab = TAB_TECH }, enabled = historyPosition < historySize, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next scan", tint = if (historyPosition < historySize) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), modifier = Modifier.size(20.dp))
+                        }
+                    }
                     if (hasScanned && !scanning) {
                         IconButton(onClick = { exportReport() }, modifier = Modifier.size(40.dp)) {
                             Icon(Icons.Filled.Share, "Export report", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
@@ -601,33 +696,16 @@ fun PocScanScreen(
                 containerColor = MaterialTheme.colorScheme.background,
                 tonalElevation = 0.dp,
             ) {
-                val techBadge = techs.size.takeIf { hasScanned && it > 0 }
-                val intelBadge = (signals?.headers?.filterKeys { it != "_status" && it != "_header_error" }?.size ?: 0)
-                    .takeIf { hasScanned && it > 0 }
-
                 listOf(
                     Triple(TAB_TECH,   Icons.Filled.Layers,   "Tech"),
                     Triple(TAB_INTEL,  Icons.AutoMirrored.Filled.ManageSearch, "Intel"),
                     Triple(TAB_CODE,   Icons.Filled.Code,     "Code"),
                     Triple(TAB_REPEAT, Icons.AutoMirrored.Filled.Send, "Repeat"),
                 ).forEach { (idx, icon, label) ->
-                    val badge = when (idx) { TAB_TECH -> techBadge; TAB_INTEL -> intelBadge; else -> null }
                     NavigationBarItem(
                         selected = bottomTab == idx,
                         onClick = { bottomTab = idx },
-                        icon = {
-                            if (badge != null) {
-                                BadgedBox(badge = {
-                                    Badge(containerColor = Teal, contentColor = Navy) {
-                                        Text("$badge", fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }) {
-                                    Icon(icon, label, modifier = Modifier.size(22.dp))
-                                }
-                            } else {
-                                Icon(icon, label, modifier = Modifier.size(22.dp))
-                            }
-                        },
+                        icon = { Icon(icon, label, modifier = Modifier.size(22.dp)) },
                         label = {
                             Text(label, fontFamily = SpaceGrotesk, fontSize = 10.sp, fontWeight = if (bottomTab == idx) FontWeight.SemiBold else FontWeight.Normal)
                         },
@@ -656,7 +734,7 @@ fun PocScanScreen(
     }
 
     selectedTech?.let { tech ->
-        TechDetailSheet(tech = tech, onDismiss = { selectedTech = null })
+        TechDetailSheet(tech = tech, scanUrl = signals?.finalUrl ?: urlInput, onDismiss = { selectedTech = null })
     }
 }
 
@@ -842,7 +920,7 @@ private fun TechResultsContent(
 
         grouped.forEach { (category, list) ->
             item { CategoryHeader(category = category, count = list.size) }
-            items(list.sortedBy { it.name }) { tech ->
+            items(list.sortedWith(compareBy({ techNamePriority(it.name) }, { it.name }))) { tech ->
                 TechRow(tech = tech, iconTint = iconTint, onClick = { onTechClick(tech) })
             }
             item { Spacer(modifier = Modifier.height(8.dp)) }
@@ -936,7 +1014,7 @@ private fun TechRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TechDetailSheet(tech: Technology, onDismiss: () -> Unit) {
+private fun TechDetailSheet(tech: Technology, scanUrl: String = "", onDismiss: () -> Unit) {
     val uriHandler = LocalUriHandler.current
     val sheetState = rememberModalBottomSheetState()
     val accentColor = categoryAccentColor(tech.categories.firstOrNull() ?: "") ?: Teal
@@ -1066,6 +1144,54 @@ private fun TechDetailSheet(tech: Technology, onDismiss: () -> Unit) {
                     )
                 }
             }
+
+            // Common admin/default paths
+            val adminPaths = TECH_ADMIN_PATHS[tech.name] ?: emptyList()
+            if (adminPaths.isNotEmpty() && scanUrl.isNotBlank()) {
+                val baseOrigin = remember(scanUrl) {
+                    try {
+                        val uri = java.net.URI(scanUrl)
+                        "${uri.scheme}://${uri.host}"
+                    } catch (_: Exception) { null }
+                }
+                if (baseOrigin != null) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                    Text(
+                        "COMMON PATHS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.1.em,
+                        color = accentColor,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        adminPaths.forEach { path ->
+                            val fullUrl = "$baseOrigin$path"
+                            Surface(
+                                modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri(fullUrl) } },
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(8.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        path,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Icon(Icons.Filled.OpenInBrowser, null, tint = accentColor, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1113,6 +1239,23 @@ private fun TechIconFallback(
     }
 }
 
+// ─── Tab copy button helper ───────────────────────────────────────────────────
+
+@Composable
+private fun TabCopyButton(modifier: Modifier = Modifier, buildText: () -> String) {
+    val context = LocalContext.current
+    IconButton(
+        onClick = {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("ecliptic", buildText()))
+            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+        },
+        modifier = modifier.size(32.dp),
+    ) {
+        Icon(Icons.Filled.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+    }
+}
+
 // ─── Headers tab ──────────────────────────────────────────────────────────────
 
 @Composable
@@ -1129,6 +1272,23 @@ private fun HeadersContent(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TabCopyButton {
+                    buildString {
+                        if (resHeaders.isNotEmpty()) {
+                            appendLine("=== RESPONSE HEADERS ===")
+                            resHeaders.entries.sortedBy { it.key }.forEach { (k, v) -> appendLine("$k: $v") }
+                        }
+                        if (requestHeaders.isNotEmpty()) {
+                            appendLine()
+                            appendLine("=== REQUEST HEADERS ===")
+                            requestHeaders.entries.sortedBy { it.key }.forEach { (k, v) -> appendLine("$k: $v") }
+                        }
+                    }.trim()
+                }
+            }
+        }
         headerError?.let {
             item {
                 Surface(modifier = Modifier.fillMaxWidth(), color = Red.copy(alpha = 0.15f), shape = RoundedCornerShape(8.dp)) {
@@ -1319,6 +1479,22 @@ private fun CookiesContent(richCookies: List<CookieInfo>, cookies: Map<String, S
                 Text("COOKIES", color = Teal, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
                 HorizontalDivider(modifier = Modifier.weight(1f), color = Teal.copy(alpha = 0.25f))
                 Text("${displayCookies.size}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                TabCopyButton {
+                    displayCookies.sortedBy { it.name }.joinToString("\n\n") { c ->
+                        buildString {
+                            append("${c.name}=${c.value}")
+                            val flags = buildList {
+                                if (c.httpOnly) add("HttpOnly")
+                                if (c.secure) add("Secure")
+                                c.sameSite?.let { add("SameSite=$it") }
+                                c.domain?.let { add("Domain=$it") }
+                                c.path?.let { add("Path=$it") }
+                                c.expires?.let { add("Expires=$it") }
+                            }
+                            if (flags.isNotEmpty()) append("; ${flags.joinToString("; ")}")
+                        }
+                    }
+                }
             }
         }
         items(displayCookies.sortedBy { it.name }) { c ->
@@ -1401,6 +1577,23 @@ private fun SecurityHeadersContent(responseHeaders: Map<String, String>) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TabCopyButton {
+                    buildString {
+                        appendLine("Security Headers: $score / $total")
+                        appendLine()
+                        if (present.isNotEmpty()) {
+                            appendLine("PRESENT:")
+                            present.forEach { (k, label) -> appendLine("  ✓ $label: ${normalised[k] ?: ""}") }
+                            appendLine()
+                        }
+                        if (missing.isNotEmpty()) {
+                            appendLine("MISSING:")
+                            missing.forEach { (_, label) -> appendLine("  ✗ $label") }
+                        }
+                    }.trim()
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("$score / $total", color = if (score >= 7) Green else if (score >= 4) Teal else Red, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Text("security headers present", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
@@ -1461,6 +1654,19 @@ private fun ApisContent(apis: List<DetectedApi>) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TabCopyButton {
+                    apis.joinToString("\n\n") { api ->
+                        buildString {
+                            appendLine("${api.type} (${api.confidence}%)")
+                            api.endpoint?.let { appendLine("Endpoint: $it") }
+                            append("Evidence: ${api.evidence}")
+                        }
+                    }
+                }
+            }
+        }
         items(apis) { api ->
             val confColor = when {
                 api.confidence >= 80 -> Green
@@ -1534,6 +1740,47 @@ private fun ReconContent(url: String) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(domain ?: url, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                TabCopyButton {
+                    buildString {
+                        appendLine("Archive: https://web.archive.org/web/*/$url")
+                        appendLine()
+                        rdapResult?.let { r ->
+                            appendLine("WHOIS / REGISTRAR")
+                            r.registrar?.let { appendLine("Registrar: $it") }
+                            r.registrant?.let { appendLine("Registrant: $it") }
+                            r.created?.let { appendLine("Created: $it") }
+                            r.expires?.let { appendLine("Expires: $it") }
+                            r.updated?.let { appendLine("Updated: $it") }
+                            if (r.status.isNotEmpty()) appendLine("Status: ${r.status.joinToString(", ")}")
+                            if (r.nameServers.isNotEmpty()) appendLine("Name servers:\n${r.nameServers.joinToString("\n")}")
+                            appendLine()
+                        }
+                        reconFiles?.robotsTxt?.let {
+                            appendLine("ROBOTS.TXT")
+                            appendLine(it)
+                            appendLine()
+                        }
+                        reconFiles?.securityTxt?.let {
+                            appendLine("SECURITY.TXT")
+                            appendLine(it)
+                            appendLine()
+                        }
+                        reconFiles?.sitemapXml?.let {
+                            appendLine("SITEMAP.XML")
+                            appendLine(it.lines().take(50).joinToString("\n"))
+                        }
+                    }.trim()
+                }
+            }
+        }
+
         // Archive.org link
         item { NetSectionHeader("ARCHIVE", null, false) }
         item {
@@ -1719,6 +1966,7 @@ private fun ReqResContent(
                     listState = reqListState,
                     lines = reqLines,
                     scope = scope,
+                    copyText = { rawRequest },
                     onToggleExpand = {
                         val next = if (expandedPane == "req") null else "req"
                         if (next != null && !isFullScreen) onToggleFullScreen()
@@ -1759,6 +2007,7 @@ private fun ReqResContent(
                     listState = resListState,
                     lines = resLines,
                     scope = scope,
+                    copyText = { rawResponse },
                     onToggleExpand = {
                         val next = if (expandedPane == "res") null else "res"
                         if (next != null && !isFullScreen) onToggleFullScreen()
@@ -1797,8 +2046,10 @@ private fun ReqResPaneHeader(
     listState: androidx.compose.foundation.lazy.LazyListState,
     lines: List<Pair<Int, String>>,
     scope: kotlinx.coroutines.CoroutineScope,
+    copyText: () -> String = { "" },
     onToggleExpand: () -> Unit,
 ) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1817,6 +2068,13 @@ private fun ReqResPaneHeader(
             }
             IconButton(onClick = { scope.launch { if (lines.isNotEmpty()) listState.scrollToItem(lines.lastIndex) } }, modifier = Modifier.size(28.dp)) {
                 Icon(Icons.Filled.VerticalAlignBottom, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            }
+            IconButton(onClick = {
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText(label, copyText()))
+                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+            }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.ContentCopy, null, tint = labelColor, modifier = Modifier.size(14.dp))
             }
             IconButton(onClick = onToggleExpand, modifier = Modifier.size(28.dp)) {
                 Icon(if (expanded) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen, null, tint = labelColor, modifier = Modifier.size(16.dp))
@@ -2248,6 +2506,23 @@ private fun JsGlobalsContent(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TabCopyButton {
+                    buildString {
+                        if (globals.isNotEmpty()) {
+                            appendLine("=== GLOBALS ===")
+                            globals.entries.sortedBy { it.key }.forEach { (k, v) -> appendLine("$k: ${v ?: "true"}") }
+                        }
+                        if (jsProbe.isNotEmpty()) {
+                            if (globals.isNotEmpty()) appendLine()
+                            appendLine("=== JS PROPERTIES ===")
+                            jsProbe.entries.sortedBy { it.key }.forEach { (k, v) -> appendLine("$k: $v") }
+                        }
+                    }.trim()
+                }
+            }
+        }
         if (globals.isNotEmpty()) {
             item {
                 Row(
@@ -2390,7 +2665,41 @@ private fun NetworkContent(url: String, html: String, tls: TlsResult? = null, dn
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         item {
-            Text(domain, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(domain, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                TabCopyButton {
+                    buildString {
+                        tls?.let { t ->
+                            appendLine("TLS / CERTIFICATE")
+                            t.subject?.let { appendLine("Subject: $it") }
+                            t.issuer?.let { appendLine("Issuer: $it") }
+                            if (t.validFrom != null && t.validTo != null) appendLine("Valid: ${t.validFrom} → ${t.validTo}")
+                            t.tlsVersion?.let { appendLine("Protocol: $it") }
+                            t.cipherSuite?.let { appendLine("Cipher: $it") }
+                            if (t.sans.isNotEmpty()) appendLine("SANs: ${t.sans.joinToString(", ")}")
+                            appendLine()
+                        }
+                        dnsResult?.let { d ->
+                            appendLine("DNS RECORDS")
+                            if (d.aRecords.isNotEmpty()) appendLine("A:\n${d.aRecords.joinToString("\n")}")
+                            if (d.cnameRecords.isNotEmpty()) appendLine("CNAME:\n${d.cnameRecords.joinToString("\n")}")
+                            if (d.mxRecords.isNotEmpty()) appendLine("MX:\n${d.mxRecords.joinToString("\n")}")
+                            if (d.nsRecords.isNotEmpty()) appendLine("NS:\n${d.nsRecords.joinToString("\n")}")
+                            if (d.txtRecords.isNotEmpty()) appendLine("TXT:\n${d.txtRecords.joinToString("\n")}")
+                            appendLine()
+                        }
+                        asn?.let { appendLine("ASN: $it\n") }
+                        if (socialLinks.isNotEmpty()) {
+                            appendLine("SOCIAL LINKS")
+                            socialLinks.forEach { appendLine("${it.platform}: ${it.url}") }
+                        }
+                    }.trim()
+                }
+            }
             Spacer(Modifier.height(4.dp))
         }
 
@@ -2805,6 +3114,9 @@ private fun NetContent(
                 }
             }
         }
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
+            TabCopyButton { all.joinToString("\n") { "[${it.type.uppercase()}] ${it.url}" } }
+        }
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
         if (filtered.isEmpty()) {
             Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -2886,6 +3198,31 @@ private val CONSOLE_BG      = Color(0xFF0D1117)
 private val CONSOLE_SURFACE = Color(0xFF161B22)
 private val CONSOLE_BORDER  = Color(0xFF30363D)
 
+private data class ConsolePreset(val label: String, val cmd: String)
+
+private val CONSOLE_PRESETS = listOf(
+    ConsolePreset("title",        "document.title"),
+    ConsolePreset("forms",        """JSON.stringify([...document.querySelectorAll('form')].map(f=>({id:f.id,action:f.action,method:f.method,fields:[...f.elements].map(e=>e.name)})),null,2)"""),
+    ConsolePreset("links",        """JSON.stringify([...document.querySelectorAll('a[href]')].map(a=>a.href).filter(h=>h.startsWith(location.origin)),null,2)"""),
+    ConsolePreset("cookies",      "document.cookie"),
+    ConsolePreset("localStorage", "JSON.stringify({...localStorage})"),
+    ConsolePreset("sessionStore", "JSON.stringify({...sessionStorage})"),
+    ConsolePreset("Next.js",      """JSON.stringify({buildId:window.__NEXT_DATA__?.buildId,page:window.__NEXT_DATA__?.page,query:window.__NEXT_DATA__?.query})"""),
+    ConsolePreset("WordPress",    """JSON.stringify({wpApiSettings:window.wpApiSettings,woocommerce:window.woocommerce_params,ajaxUrl:window.ajaxurl})"""),
+    ConsolePreset("Shopify",      """JSON.stringify({theme:window.Shopify?.theme,currency:window.Shopify?.currency,routes:window.Shopify?.routes})"""),
+    ConsolePreset("Vue.js",       "JSON.stringify(window.Vue?.version)"),
+    ConsolePreset("Nuxt.js",      "JSON.stringify(window.__NUXT__?.config)"),
+    ConsolePreset("scripts",      """JSON.stringify([...document.querySelectorAll('script[src]')].map(s=>s.src))"""),
+    ConsolePreset("externals",    """JSON.stringify([...document.querySelectorAll('link[rel="stylesheet"],script[src],img[src]')].map(e=>e.href||e.src).filter(u=>u&&!u.startsWith(location.origin)),null,2)"""),
+    ConsolePreset("meta",         """JSON.stringify([...document.querySelectorAll('meta')].map(m=>({name:m.name||m.property||m.httpEquiv,content:m.content})).filter(m=>m.name),null,2)"""),
+    ConsolePreset("timing",       """JSON.stringify(performance.getEntriesByType('resource').map(e=>({name:e.name,type:e.initiatorType,duration:Math.round(e.duration)})).slice(0,20),null,2)"""),
+    ConsolePreset("JWT/tokens",   """[localStorage.getItem('token'),localStorage.getItem('jwt'),localStorage.getItem('access_token'),sessionStorage.getItem('token'),document.cookie].filter(Boolean).join('\n')"""),
+    ConsolePreset("hidden",       """JSON.stringify([...document.querySelectorAll('input[type="hidden"]')].map(i=>({name:i.name,value:i.value})),null,2)"""),
+    ConsolePreset("fetch?",       "typeof fetch"),
+    ConsolePreset("CSP",          """document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content||'Not in meta'"""),
+    ConsolePreset("comments",     """[...document.querySelectorAll('*')].flatMap(n=>[...n.childNodes]).filter(n=>n.nodeType===8).map(n=>n.textContent.trim()).filter(Boolean).join('\n')"""),
+)
+
 private fun consoleColor(level: String) = when (level.lowercase()) {
     "error" -> Color(0xFFFF5555)
     "warn"  -> Color(0xFFFFB86C)
@@ -2946,13 +3283,24 @@ private fun ConsoleContent(
             .fillMaxSize()
             .background(CONSOLE_BG),
     ) {
-        Text(
-            "Page JS context — same as Firefox DevTools console",
-            fontSize = 10.sp,
-            color = Color(0xFF6272A4),
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-        )
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Page JS context — same as Firefox DevTools console",
+                fontSize = 10.sp,
+                color = Color(0xFF6272A4),
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 5.dp),
+            )
+            TabCopyButton(modifier = Modifier.padding(end = 4.dp)) {
+                entries.value.joinToString("\n") { e ->
+                    when (e) {
+                        is ConsoleEntry.PageMsg -> "[${e.msg.level.uppercase()}] ${e.msg.message}"
+                        is ConsoleEntry.UserCmd -> "> ${e.input}"
+                        is ConsoleEntry.CmdResult -> e.result
+                    }
+                }
+            }
+        }
         HorizontalDivider(color = CONSOLE_BORDER)
         LazyColumn(
             state = listState,
@@ -3022,6 +3370,31 @@ private fun ConsoleContent(
                             )
                         }
                     }
+                }
+            }
+        }
+        // Preset command chips
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(CONSOLE_SURFACE),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            items(CONSOLE_PRESETS) { preset ->
+                Surface(
+                    onClick = { input = preset.cmd },
+                    shape = RoundedCornerShape(4.dp),
+                    color = CONSOLE_BG,
+                    border = BorderStroke(1.dp, CONSOLE_BORDER),
+                ) {
+                    Text(
+                        preset.label,
+                        color = Color(0xFF8BE9FD),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                    )
                 }
             }
         }
@@ -3593,16 +3966,21 @@ private fun SettingsSheet(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
 
         when (selectedTab) {
-            0 -> SettingsTabContent(
-                isDarkTheme = isDarkTheme,
-                onToggleTheme = onToggleTheme,
-                userAgent = userAgent,
-                followRedirects = followRedirects,
-                scanTimeout = scanTimeout,
-                onUaChange = { scope.launch { AppPreferences.setUserAgent(context, it) } },
-                onFollowRedirectsChange = { scope.launch { AppPreferences.setFollowRedirects(context, it) } },
-                onTimeoutChange = { scope.launch { AppPreferences.setScanTimeout(context, it) } },
-            )
+            0 -> {
+                val saveHtmlSource by AppPreferences.saveHtmlSourceFlow(context).collectAsStateWithLifecycle(false)
+                SettingsTabContent(
+                    isDarkTheme = isDarkTheme,
+                    onToggleTheme = onToggleTheme,
+                    userAgent = userAgent,
+                    followRedirects = followRedirects,
+                    scanTimeout = scanTimeout,
+                    saveHtmlSource = saveHtmlSource,
+                    onUaChange = { scope.launch { AppPreferences.setUserAgent(context, it) } },
+                    onFollowRedirectsChange = { scope.launch { AppPreferences.setFollowRedirects(context, it) } },
+                    onTimeoutChange = { scope.launch { AppPreferences.setScanTimeout(context, it) } },
+                    onSaveHtmlSourceChange = { scope.launch { AppPreferences.setSaveHtmlSource(context, it) } },
+                )
+            }
             1 -> HelpTabContent()
             2 -> AboutTabContent()
         }
@@ -3616,9 +3994,11 @@ private fun SettingsTabContent(
     userAgent: String,
     followRedirects: Boolean,
     scanTimeout: Int,
+    saveHtmlSource: Boolean,
     onUaChange: (String) -> Unit,
     onFollowRedirectsChange: (Boolean) -> Unit,
     onTimeoutChange: (Int) -> Unit,
+    onSaveHtmlSourceChange: (Boolean) -> Unit,
 ) {
     val selectedPreset = UA_PRESETS.indexOfFirst { it.second == userAgent }
         .let { if (it < 0) UA_PRESETS.lastIndex else it } // "Custom" if no match
@@ -3747,6 +4127,27 @@ private fun SettingsTabContent(
                 }
             }
         }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
+
+        // Save HTML source
+        SettingRow(label = "Save HTML source") {
+            Switch(
+                checked = saveHtmlSource,
+                onCheckedChange = onSaveHtmlSourceChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Navy, checkedTrackColor = Teal,
+                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.outline,
+                ),
+            )
+        }
+        Text(
+            "Include raw HTML in saved scans (~500KB extra per scan). Off by default.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+        )
+
         Spacer(Modifier.height(24.dp))
     }
 }
