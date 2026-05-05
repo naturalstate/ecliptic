@@ -195,6 +195,37 @@ private fun buildHarvestJs(jsPaths: Set<String>, domChecksJson: String): String 
         }
     } catch(e) {}
 
+    // --- CSS custom properties (same-origin stylesheets + computed style) ---
+    var cssCustomProps = [];
+    try {
+        var cpropSet = {};
+        function addCssProp(p) { if (p && p.charAt(0) === '-' && p.charAt(1) === '-' && !cpropSet[p]) { cpropSet[p] = true; cssCustomProps.push(p); } }
+        // Scan accessible (same-origin) stylesheet rules
+        var sheets = document.styleSheets;
+        for (var si = 0; si < sheets.length; si++) {
+            try {
+                var rules = sheets[si].cssRules || [];
+                for (var ri = 0; ri < rules.length; ri++) {
+                    var ruleStyle = rules[ri].style;
+                    if (ruleStyle) { for (var pi = 0; pi < ruleStyle.length; pi++) addCssProp(ruleStyle[pi]); }
+                    // Nested rules (media queries, supports, etc.)
+                    var nested = rules[ri].cssRules;
+                    if (nested) { for (var ni = 0; ni < nested.length; ni++) {
+                        var nStyle = nested[ni].style;
+                        if (nStyle) { for (var npi = 0; npi < nStyle.length; npi++) addCssProp(nStyle[npi]); }
+                    }}
+                }
+            } catch(cssE) {}  // CORS — skip cross-origin sheets
+        }
+        // Check computed style on :root and body (catches runtime-set vars and * rules)
+        var checkEls = [document.documentElement, document.body];
+        for (var ci = 0; ci < checkEls.length; ci++) {
+            if (!checkEls[ci]) continue;
+            var cs = window.getComputedStyle(checkEls[ci]);
+            for (var cpi = 0; cpi < cs.length; cpi++) addCssProp(cs[cpi]);
+        }
+    } catch(cssErr) {}
+
     // --- DOM tree ---
     var domTreeJson = '';
     try {
@@ -232,6 +263,7 @@ private fun buildHarvestJs(jsPaths: Set<String>, domChecksJson: String): String 
         globals:    globals,
         jsProbe:    jsProbe,
         domFound:   domFound,
+        cssCustomProps: cssCustomProps,
         metaTags:   metas,
         scriptUrls: scriptSrcs,
         cssUrls:    cssUrls,
@@ -530,6 +562,7 @@ private fun parseSignals(
             richCookies = richCookies,
             detectedApis = detectApis(htmlSource, responseHeaders, allScriptUrls),
             domFound = domFound,
+            cssProps = jsonArrayToList("cssCustomProps"),
             domTree = root.optString("domTree", ""),
             tls = tls,
             networkRequests = networkRequests,

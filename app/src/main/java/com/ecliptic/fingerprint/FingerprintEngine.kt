@@ -106,6 +106,9 @@ object FingerprintEngine {
                 record("DOM selector", foundSel.selector.take(80))
             }
         }
+        if (!matched && entry.css.isNotEmpty() && signals.cssProps.isNotEmpty()) {
+            matched = tryMatch(entry.css, signals.cssProps, "CSS variable") { it }
+        }
 
         if (!matched) return null
 

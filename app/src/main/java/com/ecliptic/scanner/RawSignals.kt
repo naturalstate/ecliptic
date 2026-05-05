@@ -63,6 +63,7 @@ data class RawSignals(
     val richCookies: List<CookieInfo> = emptyList(),
     val detectedApis: List<DetectedApi> = emptyList(),
     val domFound: Set<String> = emptySet(),
+    val cssProps: List<String> = emptyList(),
     val domTree: String = "",
     val tls: TlsResult? = null,
     val networkRequests: List<NetworkRequest> = emptyList(),

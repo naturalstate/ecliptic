@@ -27,6 +27,7 @@ data class TechEntry(
     val dom: List<DomCheck>,
     val requires: List<String>,
     val requiresCategory: List<Int>,
+    val css: List<String>,
 )
 
 class TechDatabase private constructor(
@@ -34,6 +35,7 @@ class TechDatabase private constructor(
     val categories: Map<Int, String>,
 ) {
     fun allJsPaths(): Set<String> = entries.flatMap { it.js.keys }.toSet()
+    fun hasCssChecks(): Boolean = entries.any { it.css.isNotEmpty() }
 
     // Returns a JSON object string mapping selector → {a: {attrName: regex}, t: textRegex|null}
     // If multiple techs share a selector, preference is given to the one with attribute constraints.
@@ -196,6 +198,7 @@ class TechDatabase private constructor(
                 dom = domChecks(),
                 requires = requires(),
                 requiresCategory = requiresCategory(),
+                css = strList("css"),
             )
         }
 
