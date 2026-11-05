@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ecliptic — Website Technology Scanner for Android</title>
-  <meta name="description" content="Detect the full technology stack of any website — CMS, frameworks, analytics, CDN, and 1,500+ more. On-device, instant, no account required.">
+  <meta name="description" content="Fingerprint the full technology stack of any website — CMS, frameworks, analytics, CDN, APIs, security headers and 1,500+ more. On-device, instant, no account.">
   <meta property="og:title" content="Ecliptic — Website Technology Scanner">
-  <meta property="og:description" content="Detect 1,500+ technologies from any website. On-device, instant, no account.">
+  <meta property="og:description" content="Fingerprint 1,500+ technologies, audit security headers, spider a site — all on your Android phone, on-device, no account.">
   <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,9 +22,10 @@
       --teal:     #00E5C8;
       --teal-dim: rgba(0,229,200,0.08);
       --teal-glow:rgba(0,229,200,0.18);
+      --green:    #10B981;
+      --amber:    #F5A623;
       --text:     #E8E8E8;
-      --muted:    #666666;
-      --navy:     #0A2540;
+      --muted:    #6B6B6B;
     }
 
     html { scroll-behavior: smooth; }
@@ -36,473 +37,159 @@
       font-size: 16px;
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
     }
 
     /* ── Nav ── */
     nav {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 40px;
-      height: 60px;
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px; height: 60px;
       background: rgba(10,10,10,0.85);
       backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
     }
-
-    .nav-logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      text-decoration: none;
-    }
-
-    .diamond {
-      width: 10px;
-      height: 10px;
-      background: var(--teal);
-      border-radius: 2px;
-      transform: rotate(45deg);
-      flex-shrink: 0;
-    }
-
-    .nav-wordmark {
-      font-size: 15px;
-      font-weight: 800;
-      letter-spacing: 0.18em;
-      color: var(--text);
-    }
-
+    .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .diamond { width: 10px; height: 10px; background: var(--teal); border-radius: 2px; transform: rotate(45deg); flex-shrink: 0; }
+    .nav-wordmark { font-size: 15px; font-weight: 800; letter-spacing: 0.18em; color: var(--text); }
     .nav-links { display: flex; gap: 6px; align-items: center; }
-
-    .nav-link {
-      font-size: 13px;
-      color: var(--muted);
-      text-decoration: none;
-      padding: 6px 12px;
-      border-radius: 6px;
-      transition: color 0.15s, background 0.15s;
-    }
+    .nav-link { font-size: 13px; color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 6px; transition: color 0.15s, background 0.15s; }
     .nav-link:hover { color: var(--text); background: var(--surface2); }
-
-    .nav-cta {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--bg);
-      background: var(--teal);
-      padding: 7px 16px;
-      border-radius: 8px;
-      text-decoration: none;
-      transition: opacity 0.15s;
-    }
+    .nav-cta { font-size: 13px; font-weight: 600; color: var(--bg); background: var(--teal); padding: 7px 16px; border-radius: 8px; text-decoration: none; transition: opacity 0.15s; }
     .nav-cta:hover { opacity: 0.85; }
 
     /* ── Hero ── */
     .hero {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 60px;
-      align-items: center;
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 100px 40px 80px;
+      display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 60px; align-items: center;
+      max-width: 1100px; margin: 0 auto; padding: 90px 40px 70px;
     }
-
     .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      color: var(--teal);
-      background: var(--teal-dim);
-      border: 1px solid rgba(0,229,200,0.2);
-      padding: 5px 12px;
-      border-radius: 100px;
-      margin-bottom: 24px;
-      letter-spacing: 0.06em;
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--teal);
+      background: var(--teal-dim); border: 1px solid rgba(0,229,200,0.2);
+      padding: 5px 12px; border-radius: 100px; margin-bottom: 24px; letter-spacing: 0.06em;
     }
+    .hero-badge::before { content: ''; width: 6px; height: 6px; background: var(--teal); border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-    .hero-badge::before {
-      content: '';
-      width: 6px;
-      height: 6px;
-      background: var(--teal);
-      border-radius: 50%;
-      animation: pulse 2s infinite;
+    .hero h1 {
+      font-size: clamp(40px, 5.4vw, 60px); font-weight: 800; letter-spacing: -0.01em;
+      line-height: 1.05; margin-bottom: 18px; color: var(--text);
     }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.3; }
+    .hero h1 .grad {
+      background: linear-gradient(90deg, #2FE3C0, #00E5C8 55%, #10B981);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
     }
-
-    h1 {
-      font-size: clamp(42px, 6vw, 64px);
-      font-weight: 800;
-      letter-spacing: 0.14em;
-      color: var(--teal);
-      line-height: 1;
-      margin-bottom: 20px;
-    }
-
-    .hero-sub {
-      font-size: 18px;
-      color: var(--text);
-      font-weight: 500;
-      line-height: 1.5;
-      margin-bottom: 12px;
-    }
-
-    .hero-desc {
-      font-size: 14px;
-      color: var(--muted);
-      line-height: 1.7;
-      margin-bottom: 36px;
-      max-width: 420px;
-    }
-
+    .hero-desc { font-size: 15px; color: var(--muted); line-height: 1.7; margin-bottom: 34px; max-width: 440px; }
     .cta-group { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-
     .btn-play {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      background: var(--teal);
-      color: #0A0A0A;
-      font-family: 'Space Grotesk', sans-serif;
-      font-size: 14px;
-      font-weight: 700;
-      padding: 13px 22px;
-      border-radius: 10px;
-      text-decoration: none;
-      transition: opacity 0.15s, transform 0.15s;
-      letter-spacing: 0.01em;
+      display: inline-flex; align-items: center; gap: 10px; background: var(--teal); color: #0A0A0A;
+      font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 700; padding: 13px 22px;
+      border-radius: 10px; text-decoration: none; transition: opacity 0.15s, transform 0.15s;
     }
     .btn-play:hover { opacity: 0.88; transform: translateY(-1px); }
-
-    .btn-play svg { flex-shrink: 0; }
-
-    .btn-ghost {
-      font-size: 13px;
-      color: var(--muted);
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: color 0.15s;
-    }
+    .btn-ghost { font-size: 13px; color: var(--muted); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: color 0.15s; }
     .btn-ghost:hover { color: var(--text); }
+    .btn-ghost svg { stroke: currentColor; fill: none; }
 
-    /* ── Terminal mockup ── */
-    .terminal {
-      background: #0D1117;
-      border: 1px solid #30363D;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,229,200,0.06);
+    /* ── Phone mockup ── */
+    .phone-wrap { display: flex; justify-content: center; }
+    .phone {
+      width: 300px; background: #050505; border-radius: 40px; padding: 11px;
+      border: 1px solid #262626;
+      box-shadow: 0 30px 90px rgba(0,0,0,0.65), 0 0 0 1px rgba(0,229,200,0.05), inset 0 0 0 2px #0e0e0e;
     }
+    .phone-screen { background: var(--bg); border-radius: 30px; overflow: hidden; height: 600px; display: flex; flex-direction: column; }
 
-    .terminal-bar {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 12px 16px;
-      background: #161B22;
-      border-bottom: 1px solid #30363D;
+    .app-top { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; }
+    .app-top .diamond { width: 8px; height: 8px; }
+    .app-top .wm { font-size: 12px; font-weight: 800; letter-spacing: 0.16em; color: var(--text); flex: 1; }
+    .app-top .ico { width: 16px; height: 16px; stroke: var(--muted); fill: none; stroke-width: 1.6; }
+
+    .app-urlbar { display: flex; gap: 8px; padding: 4px 16px 12px; }
+    .app-url {
+      flex: 1; display: flex; align-items: center; gap: 7px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+      padding: 9px 11px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text);
     }
+    .app-url svg { width: 12px; height: 12px; stroke: var(--muted); fill: none; stroke-width: 1.6; }
+    .app-scan { background: var(--teal); color: #061512; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; border-radius: 9px; padding: 0 15px; display: grid; place-items: center; }
 
-    .dot { width: 10px; height: 10px; border-radius: 50%; }
-    .dot-r { background: #FF5F57; }
-    .dot-y { background: #FFBD2E; }
-    .dot-g { background: #28C840; }
+    .app-body { flex: 1; overflow: hidden; padding: 4px 16px; position: relative; -webkit-mask-image: linear-gradient(#000 88%, transparent); mask-image: linear-gradient(#000 88%, transparent); }
+    .cat { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 12px 0 6px; }
+    .cat:first-child { margin-top: 2px; }
+    .trow { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #141414; }
+    .tava { width: 28px; height: 28px; border-radius: 7px; background: var(--teal-dim); color: var(--teal); display: grid; place-items: center; font-weight: 800; font-size: 12px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+    .tname { font-size: 13px; color: var(--text); flex: 1; }
+    .tver { font-size: 10px; color: var(--teal); background: var(--teal-dim); padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; }
+    .tconf { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
 
-    .terminal-url {
-      margin-left: 8px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      color: #8B949E;
-      background: #0D1117;
-      padding: 3px 10px;
-      border-radius: 4px;
-      flex: 1;
-      max-width: 220px;
-    }
-
-    .terminal-body {
-      padding: 20px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      line-height: 1.8;
-      min-height: 260px;
-    }
-
-    .t-stage { color: #00E5C8; }
-    .t-key   { color: #8BE9FD; }
-    .t-val   { color: #E8E8E8; }
-    .t-cat   { color: #FF79C6; }
-    .t-ver   { color: #00E5C8; font-size: 11px; }
-    .t-dim   { color: #484F58; }
-    .t-pass  { color: #3FB950; }
-    .t-fail  { color: #F85149; }
-    .t-warn  { color: #D29922; }
-
-    .cursor {
-      display: inline-block;
-      width: 8px;
-      height: 14px;
-      background: var(--teal);
-      vertical-align: text-bottom;
-      animation: blink 1.1s step-end infinite;
-    }
-
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .app-nav { display: flex; border-top: 1px solid var(--border); background: var(--surface); }
+    .app-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 0 11px; font-size: 9px; letter-spacing: 0.04em; color: var(--muted); }
+    .app-nav-item svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+    .app-nav-item.active { color: var(--teal); }
 
     /* ── Stats bar ── */
-    .stats {
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-
-    .stats-inner {
-      display: flex;
-      justify-content: center;
-      gap: 0;
-      max-width: 1100px;
-      margin: 0 auto;
-    }
-
-    .stat {
-      flex: 1;
-      max-width: 220px;
-      text-align: center;
-      padding: 28px 24px;
-      border-right: 1px solid var(--border);
-    }
+    .stats { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface); }
+    .stats-inner { display: flex; justify-content: center; gap: 0; max-width: 1100px; margin: 0 auto; }
+    .stat { flex: 1; max-width: 240px; text-align: center; padding: 28px 24px; border-right: 1px solid var(--border); }
     .stat:last-child { border-right: none; }
+    .stat-num { font-size: 32px; font-weight: 800; color: var(--teal); letter-spacing: -0.02em; line-height: 1; margin-bottom: 4px; }
+    .stat-label { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
 
-    .stat-num {
-      font-size: 32px;
-      font-weight: 800;
-      color: var(--teal);
-      letter-spacing: -0.02em;
-      line-height: 1;
-      margin-bottom: 4px;
-    }
+    /* ── Sections ── */
+    .section { max-width: 1100px; margin: 0 auto; padding: 84px 40px; }
+    .section-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--teal); letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 12px; }
+    .section-title { font-size: 30px; font-weight: 700; color: var(--text); margin-bottom: 48px; max-width: 520px; line-height: 1.25; }
 
-    .stat-label {
-      font-size: 12px;
-      color: var(--muted);
-      letter-spacing: 0.04em;
-    }
-
-    /* ── Features ── */
-    .section {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 80px 40px;
-    }
-
-    .section-label {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      color: var(--teal);
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      margin-bottom: 12px;
-    }
-
-    .section-title {
-      font-size: 30px;
-      font-weight: 700;
-      color: var(--text);
-      margin-bottom: 48px;
-      max-width: 500px;
-      line-height: 1.25;
-    }
-
-    .features {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 16px;
-    }
-
-    .feature-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 24px;
-      transition: border-color 0.2s, background 0.2s;
-    }
-    .feature-card:hover {
-      border-color: rgba(0,229,200,0.3);
-      background: var(--surface2);
-    }
-
-    .feature-icon {
-      width: 36px;
-      height: 36px;
-      background: var(--teal-dim);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 14px;
-      font-size: 18px;
-    }
-
-    .feature-title {
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 6px;
-    }
-
-    .feature-desc {
-      font-size: 13px;
-      color: var(--muted);
-      line-height: 1.6;
-    }
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+    .feature-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; transition: border-color 0.2s, background 0.2s, transform 0.2s; }
+    .feature-card:hover { border-color: rgba(0,229,200,0.3); background: var(--surface2); transform: translateY(-2px); }
+    .feature-icon { width: 40px; height: 40px; background: var(--teal-dim); border: 1px solid rgba(0,229,200,0.15); border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+    .feature-icon svg { width: 20px; height: 20px; stroke: var(--teal); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+    .feature-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    .feature-desc { font-size: 13px; color: var(--muted); line-height: 1.6; }
 
     /* ── How it works ── */
     .how { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-
-    .steps {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 0;
-    }
-
-    .step {
-      padding: 40px;
-      border-right: 1px solid var(--border);
-      position: relative;
-    }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+    .step { padding: 40px; border-right: 1px solid var(--border); }
     .step:last-child { border-right: none; }
+    .step-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--teal); letter-spacing: 0.1em; margin-bottom: 16px; }
+    .step-title { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+    .step-desc { font-size: 13px; color: var(--muted); line-height: 1.65; }
 
-    .step-num {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      color: var(--teal);
-      letter-spacing: 0.1em;
-      margin-bottom: 16px;
-    }
-
-    .step-title {
-      font-size: 17px;
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 8px;
-    }
-
-    .step-desc {
-      font-size: 13px;
-      color: var(--muted);
-      line-height: 1.65;
-    }
-
-    /* ── CTA banner ── */
-    .cta-section {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 80px 40px;
-      text-align: center;
-    }
-
-    .cta-box {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 60px 40px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .cta-box::before {
-      content: '';
-      position: absolute;
-      top: -40px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 300px;
-      height: 300px;
-      background: radial-gradient(circle, var(--teal-glow) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .cta-box h2 {
-      font-size: 28px;
-      font-weight: 700;
-      color: var(--text);
-      margin-bottom: 12px;
-      position: relative;
-    }
-
-    .cta-box p {
-      font-size: 14px;
-      color: var(--muted);
-      margin-bottom: 32px;
-      position: relative;
-    }
-
+    /* ── CTA ── */
+    .cta-section { max-width: 1100px; margin: 0 auto; padding: 84px 40px; text-align: center; }
+    .cta-box { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 62px 40px; position: relative; overflow: hidden; }
+    .cta-box::before { content: ''; position: absolute; top: -40px; left: 50%; transform: translateX(-50%); width: 320px; height: 320px; background: radial-gradient(circle, var(--teal-glow) 0%, transparent 70%); pointer-events: none; }
+    .cta-box h2 { font-size: 28px; font-weight: 700; color: var(--text); margin-bottom: 12px; position: relative; }
+    .cta-box p { font-size: 14px; color: var(--muted); margin-bottom: 30px; position: relative; }
     .cta-box .btn-play { position: relative; }
-
-    .version-badge {
-      display: inline-block;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: 16px;
-    }
+    .version-badge { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 16px; position: relative; }
 
     /* ── Footer ── */
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 28px 40px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      max-width: 1100px;
-      margin: 0 auto;
-    }
-
-    .footer-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
+    footer { border-top: 1px solid var(--border); padding: 28px 40px; display: flex; justify-content: space-between; align-items: center; max-width: 1100px; margin: 0 auto; }
+    .footer-left { display: flex; align-items: center; gap: 10px; }
     .footer-text { font-size: 12px; color: var(--muted); }
-
     .footer-links { display: flex; gap: 20px; }
     .footer-link { font-size: 12px; color: var(--muted); text-decoration: none; transition: color 0.15s; }
     .footer-link:hover { color: var(--teal); }
 
     /* ── Responsive ── */
-    @media (max-width: 768px) {
+    @media (max-width: 860px) {
       nav { padding: 0 20px; }
       .nav-link { display: none; }
-
-      .hero {
-        grid-template-columns: 1fr;
-        padding: 60px 20px 40px;
-        gap: 40px;
-      }
-
+      .hero { grid-template-columns: 1fr; padding: 56px 20px 40px; gap: 48px; }
+      .phone-wrap { order: -1; }
       .steps { grid-template-columns: 1fr; }
       .step { border-right: none; border-bottom: 1px solid var(--border); }
       .step:last-child { border-bottom: none; }
-
       .stats-inner { flex-wrap: wrap; }
-      .stat { border-right: none; border-bottom: 1px solid var(--border); max-width: 100%; }
-
+      .stat { border-right: none; border-bottom: 1px solid var(--border); max-width: 100%; flex-basis: 50%; }
       .section { padding: 60px 20px; }
       footer { flex-direction: column; gap: 16px; padding: 24px 20px; }
-      .cta-box { padding: 40px 24px; }
+      .cta-box { padding: 44px 24px; }
     }
   </style>
 </head>
@@ -517,67 +204,84 @@
   <div class="nav-links">
     <a class="nav-link" href="#features">Features</a>
     <a class="nav-link" href="#how">How it works</a>
-    <a class="nav-link" href="https://github.com/naturalstate/ecliptic" target="_blank">GitHub</a>
-    <a class="nav-cta" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank">Download</a>
+    <a class="nav-link" href="https://github.com/naturalstate/ecliptic" target="_blank" rel="noopener">GitHub</a>
+    <a class="nav-cta" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank" rel="noopener">Download</a>
   </div>
 </nav>
 
 <!-- Hero -->
 <section class="hero">
   <div class="hero-left">
-    <div class="hero-badge">v0.3.0-beta · Free · No account</div>
-    <h1>ECLIPTIC</h1>
-    <p class="hero-sub">Fingerprint any website from your phone.</p>
+    <div class="hero-badge">v1.0.0 · Free · No account</div>
+    <h1>Fingerprint any website <span class="grad">from your phone.</span></h1>
     <p class="hero-desc">
-      Detect CMS, frameworks, analytics, CDN, security headers, TLS info, cookies, and 1,500+ other technologies — using a real browser engine, entirely on-device.
+      Point Ecliptic at any URL and it detects the full stack — CMS, frameworks, analytics, CDN, APIs, security headers, TLS, cookies and 1,500+ more — using a real browser engine, entirely on-device. No account, no backend, no telemetry.
     </p>
     <div class="cta-group">
-      <a class="btn-play" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank">
+      <a class="btn-play" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank" rel="noopener">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
           <path d="M3.18 23.85c.36.2.77.26 1.16.17l12.55-11.55L13.6 9.22 3.18 23.85zM21.5 10.28l-3.07-1.75L14.8 12l3.63 3.47 3.07-1.75c.88-.5.88-2.94 0-3.44zM2.07 1.15C1.73 1.52 1.54 2.06 1.54 2.77v18.46c0 .71.19 1.25.53 1.62l.09.08 10.34-10.34v-.24L2.16 1.07l-.09.08zM13.6 14.78l3.29-3.29L4.34.15c-.39-.22-.83-.24-1.16-.06L13.6 14.78z"/>
         </svg>
         Get it on Google Play
       </a>
-      <a class="btn-ghost" href="https://github.com/naturalstate/ecliptic" target="_blank">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-        </svg>
+      <a class="btn-ghost" href="https://github.com/naturalstate/ecliptic" target="_blank" rel="noopener">
+        <svg width="15" height="15" viewBox="0 0 24 24" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
         View source
       </a>
     </div>
   </div>
 
-  <!-- Terminal mockup -->
-  <div class="hero-right">
-    <div class="terminal">
-      <div class="terminal-bar">
-        <div class="dot dot-r"></div>
-        <div class="dot dot-y"></div>
-        <div class="dot dot-g"></div>
-        <div class="terminal-url">shopify.com</div>
-      </div>
-      <div class="terminal-body" id="terminal-output">
-        <span class="t-stage">→ Fetching headers…</span><br>
-        <span class="t-stage">→ Loading page…</span><br>
-        <span class="t-stage">→ Fingerprinting…</span><br>
-        <br>
-        <span class="t-dim">─────────────────────────</span><br>
-        <span class="t-cat">CMS</span><br>
-        <span class="t-key">  Shopify</span> <span class="t-ver">2.14.0</span><br>
-        <br>
-        <span class="t-cat">CDN</span><br>
-        <span class="t-key">  Cloudflare</span><br>
-        <br>
-        <span class="t-cat">Analytics</span><br>
-        <span class="t-key">  Google Analytics 4</span><br>
-        <span class="t-key">  Hotjar</span><br>
-        <br>
-        <span class="t-cat">Security</span><br>
-        <span class="t-key">  HSTS</span>         <span class="t-pass">✓ Present</span><br>
-        <span class="t-key">  CSP</span>          <span class="t-fail">✗ Missing</span><br>
-        <span class="t-key">  X-Frame</span>      <span class="t-pass">✓ Present</span><br>
-        <br>
-        <span class="t-dim">21 technologies · 380ms</span> <span class="cursor"></span>
+  <!-- Phone mockup of the real app -->
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="phone-screen">
+        <div class="app-top">
+          <div class="diamond"></div>
+          <span class="wm">ECLIPTIC</span>
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        </div>
+        <div class="app-urlbar">
+          <div class="app-url">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            shopify.com
+          </div>
+          <div class="app-scan">SCAN</div>
+        </div>
+        <div class="app-body">
+          <div class="cat">CMS · Ecommerce</div>
+          <div class="trow"><div class="tava">S</div><div class="tname">Shopify</div><div class="tver">2.14.0</div></div>
+
+          <div class="cat">JavaScript framework</div>
+          <div class="trow"><div class="tava">R</div><div class="tname">React</div><div class="tver">18.2</div></div>
+
+          <div class="cat">CDN · Security</div>
+          <div class="trow"><div class="tava">C</div><div class="tname">Cloudflare</div><div class="tconf">100%</div></div>
+
+          <div class="cat">Analytics</div>
+          <div class="trow"><div class="tava">G</div><div class="tname">Google Analytics 4</div><div class="tconf">100%</div></div>
+          <div class="trow"><div class="tava">H</div><div class="tname">Hotjar</div><div class="tconf">95%</div></div>
+
+          <div class="cat">Web server</div>
+          <div class="trow"><div class="tava">N</div><div class="tname">nginx</div><div class="tver">1.25</div></div>
+        </div>
+        <div class="app-nav">
+          <div class="app-nav-item active">
+            <svg viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+            Tech
+          </div>
+          <div class="app-nav-item">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Intel
+          </div>
+          <div class="app-nav-item">
+            <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Code
+          </div>
+          <div class="app-nav-item">
+            <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Repeat
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -586,22 +290,10 @@
 <!-- Stats bar -->
 <div class="stats">
   <div class="stats-inner">
-    <div class="stat">
-      <div class="stat-num">1,500+</div>
-      <div class="stat-label">Technologies detected</div>
-    </div>
-    <div class="stat">
-      <div class="stat-num">4</div>
-      <div class="stat-label">Detection layers</div>
-    </div>
-    <div class="stat">
-      <div class="stat-num">0</div>
-      <div class="stat-label">Data sent to servers</div>
-    </div>
-    <div class="stat">
-      <div class="stat-num">Free</div>
-      <div class="stat-label">No account, no ads</div>
-    </div>
+    <div class="stat"><div class="stat-num">1,500+</div><div class="stat-label">Technologies detected</div></div>
+    <div class="stat"><div class="stat-num">8</div><div class="stat-label">Intel layers per scan</div></div>
+    <div class="stat"><div class="stat-num">0</div><div class="stat-label">Data sent to servers</div></div>
+    <div class="stat"><div class="stat-num">Free</div><div class="stat-label">No account, no ads</div></div>
   </div>
 </div>
 
@@ -610,46 +302,61 @@
   <div class="section-label">// capabilities</div>
   <h2 class="section-title">Everything you need. Nothing you don't.</h2>
   <div class="features">
+
     <div class="feature-card">
-      <div class="feature-icon">🔍</div>
+      <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0-7 17"/><path d="M12 6a6 6 0 0 0-5 9.3"/><path d="M12 10a2 2 0 0 0-1.4 3.4"/><path d="M12 14v8"/></svg></div>
       <div class="feature-title">Deep fingerprinting</div>
-      <div class="feature-desc">Matches HTTP headers, HTML source, JavaScript globals, DOM structure, and cookies against 1,500+ technology patterns.</div>
+      <div class="feature-desc">Matches HTTP headers, HTML source, JavaScript globals, DOM structure and CSS variables against 1,500+ technology patterns — with corroborated framework detection, so no false React/Svelte hits.</div>
     </div>
+
     <div class="feature-card">
-      <div class="feature-icon">🛡</div>
-      <div class="feature-title">Security headers</div>
-      <div class="feature-desc">Instant pass/fail audit for CSP, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy, and more.</div>
+      <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+      <div class="feature-title">Security header audit</div>
+      <div class="feature-desc">Pass/fail scoring for CSP, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy, COOP/COEP/CORP and more — present values shown in full.</div>
     </div>
+
     <div class="feature-card">
-      <div class="feature-icon">🔄</div>
+      <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M4 7h13"/><polyline points="14 4 17 7 14 10"/><path d="M20 17H7"/><polyline points="10 14 7 17 10 20"/></svg></div>
+      <div class="feature-title">API &amp; WebSocket detection</div>
+      <div class="feature-desc">Finds the real endpoints a site calls — REST, GraphQL, JSON-RPC, SOAP, gRPC and WebSocket — with concrete URLs pulled from captured requests and source.</div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><path d="M5 5l3 3M16 16l3 3M19 5l-3 3M8 16l-3 3"/></svg></div>
+      <div class="feature-title">Spider</div>
+      <div class="feature-desc">Crawl a site into a page map — seeded from its sitemap and robots.txt, following links where needed. Same-site, polite, with start/pause/stop and copy-all.</div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon"><svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
       <div class="feature-title">HTTP Repeater</div>
-      <div class="feature-desc">Craft and replay raw HTTP requests with full header control. Raw editor or visual wizard — both modes included.</div>
+      <div class="feature-desc">Craft and replay raw HTTP requests with full header control — raw editor or visual wizard, pre-populated from the scan, with a fullscreen response viewer.</div>
     </div>
+
     <div class="feature-card">
-      <div class="feature-icon">📡</div>
-      <div class="feature-title">Live network capture</div>
-      <div class="feature-desc">Watch every request the page makes in real time. Filter by type — scripts, XHR, images, fonts, media.</div>
+      <div class="feature-icon"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
+      <div class="feature-title">Live network &amp; JS console</div>
+      <div class="feature-desc">Watch every request the page makes in real time, filterable by type — and run JavaScript directly in the page context, DevTools-style.</div>
     </div>
+
     <div class="feature-card">
-      <div class="feature-icon">⌨️</div>
-      <div class="feature-title">JS console</div>
-      <div class="feature-desc">Run JavaScript directly in the page context. Same as Firefox DevTools — access window, localStorage, fetch, and more.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">📋</div>
-      <div class="feature-title">Full reports</div>
-      <div class="feature-desc">Export a complete HTML report covering techs, headers, TLS, cookies, DNS, APIs, and network. Open in Chrome, print to PDF.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🔎</div>
+      <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18M3 12h18"/></svg></div>
       <div class="feature-title">Intel &amp; Recon</div>
-      <div class="feature-desc">WHOIS, DNS records, ASN info, TLS certificate details, robots.txt, sitemap, and security.txt — all in one scan.</div>
+      <div class="feature-desc">WHOIS/RDAP, DNS records, ASN, TLS certificate details, social links, robots.txt, security.txt and sitemaps — all gathered in one scan.</div>
     </div>
+
     <div class="feature-card">
-      <div class="feature-icon">🔐</div>
-      <div class="feature-title">Fully on-device</div>
-      <div class="feature-desc">No backend. No account. No telemetry. Scans run entirely in the embedded browser on your phone.</div>
+      <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg></div>
+      <div class="feature-title">Full HTML reports</div>
+      <div class="feature-desc">Export a complete, shareable HTML report covering techs, headers, TLS, cookies, APIs and network. Open in Chrome, print to PDF.</div>
     </div>
+
+    <div class="feature-card">
+      <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg></div>
+      <div class="feature-title">Fully on-device</div>
+      <div class="feature-desc">No backend, no account, no telemetry. Scans run entirely in the embedded browser on your phone — long-press any value to copy it.</div>
+    </div>
+
   </div>
 </section>
 
@@ -662,17 +369,17 @@
       <div class="step">
         <div class="step-num">01</div>
         <div class="step-title">Enter any URL</div>
-        <div class="step-desc">Paste or type any website URL. Or share a link directly from Chrome — Ecliptic appears in the share sheet.</div>
+        <div class="step-desc">Paste or type any website — no <code>https://</code> required. Or share a link straight from Chrome; Ecliptic appears in the share sheet.</div>
       </div>
       <div class="step">
         <div class="step-num">02</div>
         <div class="step-title">Scan</div>
-        <div class="step-desc">The embedded Chromium engine loads the page, injects probes, intercepts network requests, and collects signals — same as a real browser visit.</div>
+        <div class="step-desc">The embedded Chromium engine loads the page, injects probes, intercepts network requests and collects signals — exactly like a real browser visit.</div>
       </div>
       <div class="step">
         <div class="step-num">03</div>
-        <div class="step-title">Explore results</div>
-        <div class="step-desc">Browse detected technologies, audit security headers, inspect raw requests and responses, run console commands, and export a full report.</div>
+        <div class="step-title">Explore &amp; export</div>
+        <div class="step-desc">Browse techs, audit security headers, spider the site, inspect requests, run console commands, and export a full report.</div>
       </div>
     </div>
   </div>
@@ -683,13 +390,13 @@
   <div class="cta-box">
     <h2>Ready to scan?</h2>
     <p>Free download. No account. Works on any Android 8.0+ device.</p>
-    <a class="btn-play" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank">
+    <a class="btn-play" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank" rel="noopener">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
         <path d="M3.18 23.85c.36.2.77.26 1.16.17l12.55-11.55L13.6 9.22 3.18 23.85zM21.5 10.28l-3.07-1.75L14.8 12l3.63 3.47 3.07-1.75c.88-.5.88-2.94 0-3.44zM2.07 1.15C1.73 1.52 1.54 2.06 1.54 2.77v18.46c0 .71.19 1.25.53 1.62l.09.08 10.34-10.34v-.24L2.16 1.07l-.09.08zM13.6 14.78l3.29-3.29L4.34.15c-.39-.22-.83-.24-1.16-.06L13.6 14.78z"/>
       </svg>
       Get it on Google Play
     </a>
-    <div class="version-badge">v0.3.0-beta · Android 8.0+</div>
+    <span class="version-badge">v1.0.0 · Android 8.0+ · <a class="footer-link" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener" style="color:var(--teal)">GitHub Releases</a></span>
   </div>
 </div>
 
@@ -697,12 +404,12 @@
 <footer>
   <div class="footer-left">
     <div class="diamond"></div>
-    <span class="footer-text">© 2025 Ecliptic. Open source.</span>
+    <span class="footer-text">© 2026 Ecliptic. Open source, MIT.</span>
   </div>
   <div class="footer-links">
-    <a class="footer-link" href="https://github.com/naturalstate/ecliptic" target="_blank">GitHub</a>
-    <a class="footer-link" href="https://github.com/naturalstate/ecliptic/issues" target="_blank">Issues</a>
-    <a class="footer-link" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank">Play Store</a>
+    <a class="footer-link" href="https://github.com/naturalstate/ecliptic" target="_blank" rel="noopener">GitHub</a>
+    <a class="footer-link" href="https://github.com/naturalstate/ecliptic/issues" target="_blank" rel="noopener">Issues</a>
+    <a class="footer-link" href="privacy.html">Privacy</a>
   </div>
 </footer>
 
