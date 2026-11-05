@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ecliptic — Privacy Policy</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 760px; margin: 0 auto; padding: 32px 20px 64px;
+    line-height: 1.6; color: #1a1a1a; background: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e6e6; background: #0a0a0a; }
+    a { color: #21AD9A; }
+    code { background: #1c1c1c; }
+  }
+  h1 { font-size: 1.7rem; margin-bottom: 0.2rem; }
+  h2 { font-size: 1.15rem; margin-top: 2rem; color: #21AD9A; }
+  .muted { color: #888; font-size: 0.9rem; }
+  a { color: #0a7f70; }
+  code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+  ul { padding-left: 1.2rem; }
+  li { margin: 0.3rem 0; }
+</style>
+</head>
+<body>
+  <h1>Ecliptic — Privacy Policy</h1>
+  <p class="muted">Last updated: 4 November 2026</p>
+
+  <p>
+    Ecliptic is an Android app that inspects the technology stack of a website you
+    choose to scan. This policy explains what the app does and does not do with data.
+    The short version: <strong>Ecliptic has no user accounts, collects no personal
+    information, and runs no analytics or advertising.</strong>
+  </p>
+
+  <h2>Information we collect</h2>
+  <p>
+    <strong>None about you.</strong> Ecliptic does not create accounts, does not ask for
+    your name, email, or any identifier, and does not include any analytics, advertising,
+    tracking, or crash-reporting SDKs. We do not collect, transmit, or store any personal
+    information on any server. We operate no backend server for the app.
+  </p>
+
+  <h2>Data stored on your device</h2>
+  <p>
+    Your scan history (the URLs you scan and the results) is saved <strong>only on your
+    device</strong>, in the app's private storage. It never leaves your device except
+    through features you explicitly trigger (for example, exporting or sharing a report).
+    Uninstalling the app removes this data.
+  </p>
+
+  <h2>Network requests made when you scan a site</h2>
+  <p>
+    Scanning is the core function of the app and requires contacting the internet. When
+    you scan a URL, the app sends requests to the following, using the address or domain
+    you entered:
+  </p>
+  <ul>
+    <li><strong>The website you scan</strong> — loaded in an embedded browser (WebView) and fetched over HTTP(S) to read its headers, HTML, scripts, and cookies.</li>
+    <li><strong>Google Public DNS</strong> (<code>dns.google</code>) — to look up the site's DNS records.</li>
+    <li><strong>RDAP / WHOIS</strong> (<code>rdap.net</code>, <code>rdap.iana.org</code>) — to look up domain registration details.</li>
+    <li><strong>ipinfo.io</strong> — to look up the hosting network/ASN for the site's IP address.</li>
+    <li><strong>jsDelivr CDN</strong> (<code>cdn.jsdelivr.net</code>) — to load technology icons shown in results.</li>
+    <li><strong>Google Fonts</strong> — to load the app's fonts.</li>
+    <li><strong>Google Play</strong> — only if an in-app review prompt is shown.</li>
+  </ul>
+  <p>
+    The domain or IP address you choose to scan is shared with the DNS, RDAP/WHOIS, and
+    IP-info services above solely to perform those lookups. Each of those third parties
+    handles requests under its own privacy policy. Ecliptic does not send them any
+    information about you.
+  </p>
+
+  <h2>Permissions</h2>
+  <p>
+    The app requests a single permission: <strong>Internet access</strong>, required to
+    perform scans. It does not request access to contacts, location, camera, storage, or
+    any other sensitive permission.
+  </p>
+
+  <h2>Sharing and sale of data</h2>
+  <p>We do not sell, rent, or share any data. There is no data about you to share.</p>
+
+  <h2>Children</h2>
+  <p>
+    Ecliptic is a developer/security utility and is not directed at children under 13.
+    It collects no personal information from anyone.
+  </p>
+
+  <h2>Changes to this policy</h2>
+  <p>
+    If this policy changes, the updated version will be posted at this URL with a new
+    "Last updated" date.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions about this policy or the app:
+    <a href="mailto:GitHub issues">GitHub issues</a>
+  </p>
+</body>
+</html>

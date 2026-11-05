@@ -16,6 +16,25 @@
 # debugging stack traces.
 #-keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Keep line numbers and hide source file names for readable crash traces
+# while still obfuscating. Helps triage any release-only issues.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
+# ── OkHttp / Okio ──────────────────────────────────────────────────────────
+# OkHttp references optional TLS providers that aren't on Android; silence R8.
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+
+# ── Coil (image loading) ───────────────────────────────────────────────────
+-dontwarn coil.**
+
+# ── Kotlin / coroutines ────────────────────────────────────────────────────
+-dontwarn kotlinx.coroutines.**
+
+# The app parses JSON manually via org.json (no reflection), so no model-class
+# keep rules are required. Compose, OkHttp and Coil ship their own consumer
+# rules; the above only suppresses benign missing-class warnings.

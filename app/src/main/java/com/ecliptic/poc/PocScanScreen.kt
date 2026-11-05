@@ -4379,6 +4379,40 @@ private fun AboutTabContent() {
         AboutInfoRow("Fingerprint DB", "enthec/webappanalyzer")
         AboutInfoRow("Detection layers", "HTTP · HTML · JS · DOM · Cookies · Network")
         AboutInfoRow("Min Android", "8.0 (API 26)")
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+        Spacer(Modifier.height(12.dp))
+
+        Text(
+            "PRIVACY",
+            fontSize = 10.sp, fontWeight = FontWeight.Bold,
+            letterSpacing = 0.1.em, color = Teal,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "No accounts, no analytics, no telemetry. Scans are stored only on " +
+                "this device. Scanning a site contacts that site plus DNS, RDAP/WHOIS " +
+                "and IP-info lookups, and loads technology icons and fonts from public CDNs.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        val uriHandler = LocalUriHandler.current
+        Surface(
+            modifier = Modifier.fillMaxWidth().clickable {
+                runCatching { uriHandler.openUri("https://ryand202.sg-host.com/ecliptic/privacy.html") }
+            },
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Filled.OpenInBrowser, null, tint = Teal, modifier = Modifier.size(16.dp))
+                Text("Privacy Policy", color = MaterialTheme.colorScheme.onBackground, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            }
+        }
         Spacer(Modifier.height(8.dp))
     }
 }
