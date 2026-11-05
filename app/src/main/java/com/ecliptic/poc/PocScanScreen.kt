@@ -677,19 +677,23 @@ fun PocScanScreen(
                     )
                     "loading" -> LoadingState(stage = scanStage)
                     "empty"   -> EmptyState()
-                    "tech"    -> TechResultsContent(techs = techs, error = signals?.error, url = signals?.finalUrl ?: "", onTechClick = { selectedTech = it })
-                    "intel_0" -> HeadersContent(requestHeaders = signals?.requestHeaders ?: emptyMap(), responseHeaders = signals?.headers ?: emptyMap())
+                    // Wrapped in SelectionContainer so any value can be long-pressed
+                    // and copied natively (no per-field copy icons). Panes that already
+                    // provide selection (Security, Cookies, Recon, Req/Res) or have a
+                    // dedicated copy button for a large block (Source, DOM) are left as-is.
+                    "tech"    -> SelectionContainer { TechResultsContent(techs = techs, error = signals?.error, url = signals?.finalUrl ?: "", onTechClick = { selectedTech = it }) }
+                    "intel_0" -> SelectionContainer { HeadersContent(requestHeaders = signals?.requestHeaders ?: emptyMap(), responseHeaders = signals?.headers ?: emptyMap()) }
                     "intel_1" -> SecurityHeadersContent(responseHeaders = signals?.headers ?: emptyMap())
                     "intel_2" -> CookiesContent(richCookies = signals?.richCookies ?: emptyList(), cookies = signals?.cookies ?: emptyMap())
-                    "intel_3" -> ApisContent(apis = signals?.detectedApis ?: emptyList())
+                    "intel_3" -> SelectionContainer { ApisContent(apis = signals?.detectedApis ?: emptyList()) }
                     "intel_4" -> ReconContent(url = signals?.finalUrl ?: urlInput)
                     "intel_5" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput)
-                    "intel_6" -> NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls, dns = signals?.let { null })
+                    "intel_6" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls, dns = signals?.let { null }) }
                     "intel_7" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_1"  -> JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap())
+                    "code_1"  -> SelectionContainer { JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap()) }
                     "code_2"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_3"  -> NetContent(scanRequests = signals?.networkRequests ?: emptyList(), liveRequests = liveNetworkRequests)
+                    "code_3"  -> SelectionContainer { NetContent(scanRequests = signals?.networkRequests ?: emptyList(), liveRequests = liveNetworkRequests) }
                     "code_4"  -> ConsoleContent(messages = consoleMessages, evalJs = { cmd, cb -> webView.evaluateJavascript(cmd, cb) })
                     else      -> Box(modifier = Modifier.fillMaxSize())
                 }
@@ -1032,6 +1036,7 @@ private fun TechDetailSheet(tech: Technology, scanUrl: String = "", onDismiss: (
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
+      SelectionContainer {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1200,6 +1205,7 @@ private fun TechDetailSheet(tech: Technology, scanUrl: String = "", onDismiss: (
                 }
             }
         }
+      }
     }
 }
 
@@ -1800,16 +1806,18 @@ private fun SpiderContent(viewModel: ScanViewModel, url: String) {
                 )
                 TabCopyButton { spider.discovered.joinToString("\n") }
             }
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                items(spider.discovered) { u ->
-                    Text(
-                        u,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
-                    )
+            SelectionContainer(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(spider.discovered) { u ->
+                        Text(
+                            u,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
+                        )
+                    }
                 }
             }
         }
