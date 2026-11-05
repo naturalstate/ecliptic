@@ -168,17 +168,37 @@ suspend fun fetchReconFiles(baseUrl: String): ReconFiles = withContext(Dispatche
         "${u.scheme}://${u.host}${if (u.port > 0) ":${u.port}" else ""}"
     } catch (_: Exception) { baseUrl.trimEnd('/') }
 
-    fun fetch(path: String): String? = try {
-        val req = Request.Builder().url("$base$path").header("User-Agent", USER_AGENT).build()
+    // Accepts an absolute URL or a path relative to the origin.
+    fun fetch(pathOrUrl: String): String? = try {
+        val url = if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) pathOrUrl else "$base$pathOrUrl"
+        val req = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
         httpClient.newCall(req).execute().use { resp ->
             if (resp.isSuccessful) resp.body?.string()?.take(50_000) else null
         }
     } catch (_: Exception) { null }
 
+    val robots = fetch("/robots.txt")
+
+    // Discover the sitemap: prefer robots.txt "Sitemap:" lines, then fall back to the
+    // common paths. Sites vary — WordPress core uses /wp-sitemap.xml, SEO plugins use
+    // /sitemap_index.xml or /sitemap.xml, and some use /sitemaps.xml (plural).
+    val sitemapCandidates = buildList {
+        robots?.let { r ->
+            Regex("""(?im)^\s*sitemap:\s*(\S+)\s*$""").findAll(r).forEach { add(it.groupValues[1].trim()) }
+        }
+        add("/sitemap.xml")
+        add("/sitemap_index.xml")
+        add("/sitemaps.xml")
+        add("/wp-sitemap.xml")
+    }
+    val sitemap = sitemapCandidates.firstNotNullOfOrNull { candidate ->
+        fetch(candidate)?.takeIf { it.contains("<", ignoreCase = true) }
+    }
+
     ReconFiles(
-        robotsTxt  = fetch("/robots.txt"),
+        robotsTxt  = robots,
         securityTxt = fetch("/.well-known/security.txt") ?: fetch("/security.txt"),
-        sitemapXml  = fetch("/sitemap.xml") ?: fetch("/sitemap_index.xml"),
+        sitemapXml  = sitemap,
     )
 }
 

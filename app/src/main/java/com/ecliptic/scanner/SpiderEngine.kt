@@ -208,6 +208,7 @@ class SpiderEngine(private val scope: CoroutineScope) {
         candidates += "$origin/sitemap_index.xml"
         candidates += "$origin/wp-sitemap.xml"
         candidates += "$origin/sitemap.xml"
+        candidates += "$origin/sitemaps.xml"
 
         val pages = LinkedHashSet<String>()
         var fetched = 0
