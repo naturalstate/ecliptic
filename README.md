@@ -1,23 +1,23 @@
 <div align="center">
 
-<img src="assets/ecliptic-logo.png" alt="Ecliptic" width="120" />
+<img src="docs/images/banner.svg" alt="Ecliptic — fingerprint any website from your phone" width="840" />
 
-# Ecliptic
+<p align="center">
+  <a href="https://developer.android.com"><img src="https://img.shields.io/badge/platform-Android-21AD9A?style=flat-square&logo=android&logoColor=white" alt="Platform Android"></a>
+  <a href="https://developer.android.com/about/versions/oreo"><img src="https://img.shields.io/badge/min%20SDK-26-21AD9A?style=flat-square&logo=android&logoColor=white" alt="Min SDK 26"></a>
+  <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/Kotlin-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin"></a>
+  <a href="https://developer.android.com/jetpack/compose"><img src="https://img.shields.io/badge/Jetpack%20Compose-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white" alt="Jetpack Compose"></a>
+  <img src="https://img.shields.io/badge/backend-none%20·%20100%25%20on--device-10B981?style=flat-square" alt="100% on-device">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License MIT"></a>
+</p>
 
-**Website intelligence, in your pocket.**
-
-The only active Android app for deep website tech-stack fingerprinting and HTTP recon — all on-device, no backend, no tracking.
-
-[![Platform](https://img.shields.io/badge/platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
-[![Min SDK](https://img.shields.io/badge/min%20SDK-26%20(Android%208)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com/about/versions/oreo)
-[![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=for-the-badge)](CONTRIBUTING.md)
-
----
-
-<img src="assets/screenshots/tech-results.png" alt="Ecliptic Tech Results Screen" width="280" />
+<p align="center">
+  <a href="#features-at-a-glance"><b>Features</b></a> &nbsp;&middot;&nbsp;
+  <a href="#screenshots"><b>Screenshots</b></a> &nbsp;&middot;&nbsp;
+  <a href="#how-the-scan-works"><b>How it works</b></a> &nbsp;&middot;&nbsp;
+  <a href="#installation"><b>Install</b></a> &nbsp;&middot;&nbsp;
+  <a href="#roadmap"><b>Roadmap</b></a>
+</p>
 
 </div>
 
@@ -27,7 +27,7 @@ The only active Android app for deep website tech-stack fingerprinting and HTTP 
 
 Ecliptic is a native Android app that gives you instant, deep intelligence on any website. Point it at a URL — or share directly from Chrome — and it fingerprints the entire tech stack using three independent analysis layers: live HTTP headers, HTML source analysis, and JavaScript runtime probing via a real Chromium engine (Android WebView).
 
-Think of it as a pocket-sized combination of Wappalyzer, Burp Suite's repeater, and a DNS/WHOIS lookup tool — with everything running entirely on your device.
+Think of it as a pocket-sized combination of Wappalyzer, a security-header auditor, an HTTP repeater, a site spider, and a DNS/WHOIS lookup tool — with everything running entirely on your device. No account, no backend, no telemetry.
 
 ---
 
@@ -50,17 +50,20 @@ Think of it as a pocket-sized combination of Wappalyzer, Burp Suite's repeater, 
 🔍  Technology fingerprinting    →  1,500+ technologies, 30+ categories
 🛡️  Security header audit        →  10 headers scored, full values shown
 🍪  Deep cookie inspection       →  HttpOnly, Secure, SameSite, expiry, domain
-⚡  API detection                →  REST, GraphQL, SOAP, gRPC, JSON-RPC, OpenAPI
-🌐  Network recon                →  TLS cert, DNS (A/CNAME/MX/NS/TXT), ASN
+⚡  API detection                →  REST, GraphQL, SOAP, gRPC, JSON-RPC, OpenAPI, WebSocket
+🕸️  Spider                       →  Crawl a site into a page map (sitemap + link following)
+🌐  Network recon                →  TLS cert, DNS (A/CNAME/MX/NS/TXT), ASN, social links
 📋  WHOIS / RDAP                 →  Registrar, dates, name servers
-🤖  Recon files                  →  robots.txt, security.txt, sitemap.xml
+🤖  Recon files                  →  robots.txt, security.txt, sitemaps
 🔁  HTTP Repeater                →  RAW and wizard modes, fullscreen response
-👁️  Source viewer                →  Syntax-highlighted HTML, JS globals, DOM tree
+👁️  Source viewer                →  HTML, JS globals, DOM tree, live network, console
 📤  Chrome Share integration     →  Share any URL from Chrome → instant scan
-🕑  Scan history                 →  Persistent across sessions, ← → navigation
-📋  One-tap copy                 →  Copy any tab's data to clipboard instantly
-📊  HTML report export           →  Full scan exported as shareable HTML file
+🕑  Scan history                 →  Up to 50 scans, persistent, ← → navigation
+📋  Copy anywhere                →  Long-press any value, or bulk-copy a tab
+📊  HTML report export           →  Full scan exported as a shareable HTML file
 ```
+
+> **Works behind bot protection.** Network requests automatically fall back to a plain User-Agent when a site's WAF (e.g. Cloudflare) blocks browser-like clients, so the Spider, Recon and header fetches still work on protected sites.
 
 ---
 
@@ -68,17 +71,20 @@ Think of it as a pocket-sized combination of Wappalyzer, Burp Suite's repeater, 
 
 ### 🔬 Technology Fingerprinting
 
-Powered by the [enthec/webappanalyzer](https://github.com/enthec/webappanalyzer) signature database — the same engine behind Wappalyzer — running entirely on-device. Detection uses three simultaneous layers:
+Powered by the [enthec/webappanalyzer](https://github.com/enthec/webappanalyzer) signature database — the same engine behind Wappalyzer — running entirely on-device. Detection uses layered signals:
 
 | Layer | What it checks |
 |---|---|
 | **HTTP Headers** | `X-Powered-By`, `Server`, `X-Generator`, `CF-Ray`, cache headers |
 | **HTML Analysis** | Meta tags, script/CSS URLs, HTML attributes, body classes, title |
 | **JS Runtime** | Live JavaScript global probing via injected scripts in Chromium WebView |
+| **DOM & CSS** | Verified DOM selectors (attributes + JS properties) and CSS custom properties |
+
+**Accurate framework detection:** JavaScript-framework signals are corroborated against strong markers (specific globals, script URLs, verified DOM properties) rather than generic selectors, so you don't see React or Svelte reported on sites that don't actually use them.
 
 **Detected categories include:** CMS, JavaScript Frameworks, CSS Frameworks, UI Libraries, Analytics, Tag Managers, CDN, Web Servers, Databases, Programming Languages, Caching, Authentication, Ecommerce, Video, Mapping, Advertising, A/B Testing, and more.
 
-**Smart grouping:** Major CMS platforms (WordPress, Shopify, Drupal, Joomla, CraftCMS, Magento, etc.) are sorted to the top of their category. Payment card brands (Visa, Mastercard, Amex, Discover, etc.) are grouped into a single "Major Credit Cards" entry rather than listed individually.
+**Smart grouping:** Major CMS platforms (WordPress, Shopify, Drupal, Joomla, etc.) sort to the top of their category. Payment card brands (Visa, Mastercard, Amex, Discover, etc.) are grouped into a single "Major Credit Cards" entry.
 
 ---
 
@@ -99,45 +105,58 @@ Dedicated audit tab scoring 10 critical security headers:
 | `Cross-Origin-Embedder-Policy` | Spectre mitigations |
 | `Cross-Origin-Resource-Policy` | Cross-origin data leaks |
 
-Present headers shown in full with their values. Missing headers flagged in red. Live score indicator (N/10).
+Present headers shown in full with their values. Missing headers flagged in red.
 
 ---
 
 ### ⚡ API Detection
 
-Automatic detection of API technologies from HTML source, HTTP headers, and script URLs:
+Finds the API endpoints a site actually uses — from the XHR/fetch requests captured during page load, the HTML source, and referenced asset URLs. Each entry shows the **concrete endpoint URL** where identifiable, grouped by type:
 
-- **GraphQL** — endpoint patterns, `__schema` introspection hints, Apollo client globals
-- **OpenAPI / Swagger** — `/swagger-ui`, `/api-docs`, `swagger.json` patterns
-- **REST** — conventional REST endpoint structures
-- **SOAP** — WSDL references, `SOAPAction` headers, XML namespace patterns
-- **gRPC** — `grpc-status`, `grpc-message`, `content-type: application/grpc` headers
-- **JSON-RPC** — `application/json-rpc` content type, method/params payload patterns
+- **REST** — `/api/…`, `/v1…`, `api.` hosts and conventional REST endpoints
+- **GraphQL** — endpoint paths, `__schema`/`__typename` hints
+- **WebSocket** — `ws://`/`wss://` endpoints, `new WebSocket()` calls, Socket.IO usage
+- **JSON-RPC** — `jsonrpc` / `json-rpc` references
+- **SOAP** — WSDL references, `SOAPAction` headers
+- **gRPC** — `application/grpc` content type, `grpc-web` markers
+- **OpenAPI / Swagger** — `swagger`, `openapi`, `api-docs` references
 
-Each detected API shows type, confidence percentage, evidence string, and endpoint if identifiable.
+Endpoints are de-duplicated and copyable; protocol hints without a concrete URL are still listed.
+
+---
+
+### 🕸️ Spider
+
+Crawl a site into a map of its pages, right from the Intel tab — to the right of Recon.
+
+- **Sitemap-first** — seeds from `robots.txt` and common sitemap paths (`/sitemap.xml`, `/sitemap_index.xml`, `/sitemaps.xml`, `/wp-sitemap.xml`), **following sitemap indexes** down to real page URLs to minimise traffic
+- **Link following** — also harvests `<a href>` links from the page source when no sitemap exists
+- **Same-site & polite** — stays on one host (treats `www` and apex as the same site), with a conservative page/depth cap and a short delay between requests
+- **Controls** — Start / Pause / Stop, live progress, and one-tap **copy** of the full URL list
+- Each scan's spider is its own — results never bleed between scans
 
 ---
 
 ### 🌐 Network Tab
 
 <div align="center">
-<img src="assets/screenshots/network-dns.png" alt="Network Tab" width="280" />
+<img src="/screenshots/network_intel.jpg" alt="Network Tab" width="280" />
 </div>
 
 - **TLS Certificate** — Protocol version, cipher suite, subject, issuer, validity period, Subject Alternative Names (SANs)
 - **DNS Records** — Live lookup via Google DNS-over-HTTPS: A, CNAME, MX, NS, TXT records
 - **ASN** — Autonomous System Number and organisation lookup (via ipinfo.io) from first A record
-- **Social Links** — Extracted Twitter/X, Facebook, Instagram, LinkedIn, YouTube, GitHub, TikTok, Pinterest links from page source
+- **Social Links** — Twitter/X, Facebook, Instagram, LinkedIn, YouTube, GitHub, TikTok, Pinterest links extracted from page source
 
 ---
 
 ### 🤖 Recon Tab
 
 - **Wayback Machine** — Direct link to archive.org history for the scanned URL
-- **WHOIS / RDAP** — Registrar, registrant, creation date, expiry date, last updated, domain status, name servers
+- **WHOIS / RDAP** — Registrar, registrant, creation/expiry/updated dates, domain status, name servers
 - **robots.txt** — Fetched live, collapsible full view
 - **security.txt** — Fetched from `/.well-known/security.txt` and `/security.txt`
-- **sitemap.xml** — Fetched from `/sitemap.xml` and `/sitemap_index.xml`
+- **sitemap** — Discovered via `robots.txt` and common paths (`/sitemap.xml`, `/sitemap_index.xml`, `/sitemaps.xml`, `/wp-sitemap.xml`)
 
 ---
 
@@ -167,10 +186,6 @@ Full `Set-Cookie` header parsing — not just name/value:
 
 ### 👁️ Code Tab
 
-<div align="center">
-<img src="assets/screenshots/source-viewer.png" alt="Source Viewer" width="280" />
-</div>
-
 - **HTML Source** — Syntax-highlighted HTML viewer with search, remote CSS/JS file loading, save to Downloads, fullscreen mode
 - **JS Globals** — Every `window.*` global detected at runtime, including framework markers, config objects, feature flags
 - **DOM Tree** — Collapsible interactive DOM tree with tag names, IDs, classes, attributes
@@ -186,13 +201,14 @@ Every scan is automatically saved to device storage and survives app restarts.
 - **Persistent storage** — up to 50 scans saved as JSON files in internal storage (auto-pruned oldest)
 - **← → navigation** — arrows appear in the header once you have multiple scans; tap to browse previous results
 - **Full fidelity** — saved scans restore tech list, headers, cookies, TLS, APIs, and network requests
-- **Save HTML source** — optional setting (off by default) to also persist raw HTML (~500KB extra per scan)
+- **Save HTML source** — optional setting (off by default) to also persist raw HTML (~500 KB extra per scan)
 
 ---
 
-### 📋 One-Tap Copy & Export
+### 📋 Copy & Export
 
-- **Copy buttons** on every tab — Headers, Security Headers, Cookies, APIs, JS Globals, Network Requests, Console
+- **Long-press any value** — select and copy any single-line value natively (headers, cookies, API endpoints, TLS fields, URLs, tech names) — no per-field button clutter
+- **Bulk copy** — copy buttons on data-heavy tabs copy the whole tab at once
 - **Export report** — tap the share icon in the header after any scan to export a full styled HTML report covering all findings
 
 ---
@@ -200,27 +216,24 @@ Every scan is automatically saved to device storage and survives app restarts.
 ### 🔁 HTTP Repeater
 
 <div align="center">
-<img src="assets/screenshots/repeater.png" alt="Repeater" width="280" />
+<img src="/screenshots/repeat_request_response.jpg" alt="Repeater" width="280" />
 </div>
 
 Two modes for crafting and replaying HTTP requests:
 
 **RAW mode**
 - Editable raw HTTP request editor (method, path, headers, body)
-- Full-screen request and response panes independently expandable
+- Full-screen request and response panes, independently expandable
 - Syntax-coloured response viewer
 
 **WIZARD mode**
 - Visual request builder: URL, method chips, header management, body editor
 - Pre-populated from scan results — URL, method, and captured headers seeded automatically
-- Collapsible summary card post-send with fullscreen response view
 - Common headers quick-add chips (User-Agent, Accept, Content-Type, Authorization, etc.)
 
 **REQ / RES Intel sub-tab**
 - Split-screen read-only view of the original scan request and response
-- Per-pane fullscreen expand
-- Search/filter across all lines with highlight
-- Scroll navigation (top, page up, page down, bottom)
+- Per-pane fullscreen expand, search/filter with highlight, scroll navigation
 
 ---
 
@@ -231,26 +244,24 @@ URL input / Chrome Share intent
          │
          ▼
 ┌─────────────────────┐
-│  OkHttp request     │  ← Captures response headers, TLS handshake,
-│  (network layer)    │    Set-Cookie, redirects
+│  OkHttp request     │  ← Response headers, TLS handshake, Set-Cookie, redirects
+│  (network layer)    │    (plain-UA fallback for WAF-protected sites)
 └────────┬────────────┘
          │
          ▼
 ┌─────────────────────┐
-│  Android WebView    │  ← Loads the real page in Chromium
-│  (Chromium engine)  │    JS injection probes window globals,
-│                     │    captures DOM, meta tags, script URLs
+│  Android WebView    │  ← Loads the real page in Chromium; JS injection probes
+│  (Chromium engine)  │    window globals, DOM, meta tags, script URLs, network
 └────────┬────────────┘
          │
          ▼
 ┌─────────────────────┐
-│  Signal aggregation │  ← Merges headers + HTML + JS globals
-│  + fingerprinting   │    Runs against webappanalyzer DB
+│  Signal aggregation │  ← Merges headers + HTML + JS globals + DOM/CSS,
+│  + fingerprinting   │    runs against the webappanalyzer DB
 └────────┬────────────┘
          │
          ▼
-   Results displayed
-   across Tech / Intel / Code / Repeat tabs
+   Results across Tech / Intel / Code / Repeat tabs
 ```
 
 ---
@@ -267,7 +278,7 @@ URL input / Chrome Share intent
 | Fingerprint DB | enthec/webappanalyzer (bundled as assets) |
 | Image loading | Coil |
 | Min SDK | API 26 (Android 8.0) |
-| No backend | Everything runs on-device |
+| Backend | None — everything runs on-device |
 
 ---
 
@@ -299,7 +310,7 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 ## Usage
 
 **Basic scan**
-1. Type or paste any URL into the input field
+1. Type or paste any URL into the input field (no `https://` needed; an explicit `http://` is respected)
 2. Tap **SCAN**
 3. Browse results across the four tabs: **TECH**, **INTEL**, **CODE**, **REPEAT**
 
@@ -308,11 +319,10 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 2. Tap Share → **Ecliptic**
 3. App opens instantly and begins scanning
 
-**Repeating a request**
-1. After a scan, navigate to the **REPEAT** tab
-2. Request is pre-populated from scan results
-3. Edit headers, method, or body — tap **SEND**
-4. View full response in the response pane
+**Spider a site**
+1. After a scan, open **INTEL → SPIDER**
+2. Tap **Start** — Ecliptic seeds from the sitemap (if any) and follows links
+3. Pause/Stop anytime; tap copy to export the URL list
 
 ---
 
@@ -320,15 +330,14 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 
 - [x] Scan history — persistent across sessions with ← → navigation
 - [x] Export scan report — full HTML report via share sheet
-- [x] Copy to clipboard — one-tap copy on every tab
+- [x] Copy — long-press any value plus per-tab bulk copy
+- [x] Spider — crawl a site into a page map
+- [x] WebSocket detection (API tab)
+- [ ] Authenticated scans — cookie / token / interactive login
 - [ ] Scan comparison — diff two saved scans side-by-side
-- [ ] WebSocket and SSE detection (Network tab)
-- [ ] HTTP/2 and HTTP/3 protocol detection
+- [ ] Server-Sent Events (SSE) detection
 - [ ] Service Worker / PWA detection
-- [ ] Build tool fingerprinting (Webpack, Vite, Parcel)
-- [ ] WebAssembly detection
 - [ ] Auth mechanism hints (JWT, OAuth, OIDC)
-- [ ] Subresource Integrity audit
 - [ ] cURL import in Repeater
 - [ ] Play Store release
 
@@ -339,8 +348,8 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 Pull requests are welcome. For major changes, please open an issue first.
 
 ```bash
-# Run a debug build before submitting
-./gradlew assembleDebug
+# Run tests and a debug build before submitting
+./gradlew test assembleDebug
 ```
 
 ---
@@ -353,7 +362,7 @@ Pull requests are welcome. For major changes, please open an issue first.
 
 <div align="center">
 
-Built with ❤️ for developers and security researchers who live on their phones.
+Built for developers and security researchers who live on their phones.
 
 **[Report a Bug](https://github.com/naturalstate/ecliptic/issues) · [Request a Feature](https://github.com/naturalstate/ecliptic/issues) · [Releases](https://github.com/naturalstate/ecliptic/releases)**
 
