@@ -113,35 +113,48 @@ private fun buildHarvestJs(jsPaths: Set<String>, domChecksJson: String): String 
         } catch(e) {}
     }
 
-    // --- DOM selector probe (attribute/text pattern verification) ---
+    // --- DOM selector probe (attribute / JS-property / text verification) ---
+    // A selector alone is not enough: we require every declared constraint
+    // (attribute regex, JS property presence/value, text regex) to hold on a
+    // single matching element. This prevents generic selectors (e.g. "body > div"
+    // paired with a React "_reactRootContainer" property) from matching every page.
     var domFound = [];
     var domChecks = $domChecksJson;
     for (var sel in domChecks) {
         try {
-            var check = domChecks[sel];
-            var hasAttrs = Object.keys(check.a).length > 0;
-            if (hasAttrs) {
-                var el = document.querySelector(sel);
-                if (!el) continue;
-                var attrOk = true;
-                for (var attr in check.a) {
-                    var attrVal = el.getAttribute(attr);
-                    if (!attrVal || !(new RegExp(check.a[attr], 'i').test(attrVal))) { attrOk = false; break; }
+            var check    = domChecks[sel];
+            var attrs    = check.a || {};
+            var props    = check.p || {};
+            var attrKeys = Object.keys(attrs);
+            var propKeys = Object.keys(props);
+            var textRe   = check.t ? new RegExp(check.t, 'i') : null;
+            var els = document.querySelectorAll(sel);
+            if (!els || els.length === 0) continue;
+            var matched = false;
+            for (var ei = 0; ei < els.length && ei < 50; ei++) {
+                var el = els[ei];
+                var ok = true;
+                for (var ai = 0; ai < attrKeys.length; ai++) {
+                    var av = el.getAttribute(attrKeys[ai]);
+                    if (av == null) { ok = false; break; }
+                    var apat = attrs[attrKeys[ai]];
+                    if (apat && !(new RegExp(apat, 'i').test(av))) { ok = false; break; }
                 }
-                if (!attrOk) continue;
-            } else if (!document.querySelector(sel)) {
-                continue;
-            }
-            if (check.t) {
-                var textRe = new RegExp(check.t, 'i');
-                var textEls = document.querySelectorAll(sel);
-                var textOk = false;
-                for (var k = 0; k < textEls.length && k < 20; k++) {
-                    if (textRe.test(textEls[k].textContent || '')) { textOk = true; break; }
+                if (!ok) continue;
+                for (var pi = 0; pi < propKeys.length; pi++) {
+                    var pk = propKeys[pi];
+                    if (!(pk in el)) { ok = false; break; }
+                    var ppat = props[pk];
+                    if (ppat) {
+                        var pv = el[pk];
+                        if (pv == null || !(new RegExp(ppat, 'i').test(String(pv)))) { ok = false; break; }
+                    }
                 }
-                if (!textOk) continue;
+                if (!ok) continue;
+                if (textRe && !textRe.test(el.textContent || '')) continue;
+                matched = true; break;
             }
-            domFound.push(sel);
+            if (matched) domFound.push(sel);
         } catch(e) {}
     }
 
@@ -560,7 +573,7 @@ private fun parseSignals(
             title = root.optString("title"),
             cookies = allCookies,
             richCookies = richCookies,
-            detectedApis = detectApis(htmlSource, responseHeaders, allScriptUrls),
+            detectedApis = detectApis(htmlSource, responseHeaders, allScriptUrls, jsonArrayToList("cssUrls"), networkRequests),
             domFound = domFound,
             cssProps = jsonArrayToList("cssCustomProps"),
             domTree = root.optString("domTree", ""),
@@ -616,48 +629,99 @@ private fun parseSetCookieHeader(header: String): CookieInfo {
     return CookieInfo(name, value, domain, path, expires, maxAge, httpOnly, secure, sameSite)
 }
 
-internal fun detectApis(html: String, headers: Map<String, String>, scriptUrls: List<String>): List<DetectedApi> {
-    val results = mutableListOf<DetectedApi>()
+/** Classify a URL or path as an API type, or null if it does not look like an API. */
+private fun classifyApi(raw: String): String? {
+    val u = raw.lowercase()
+    return when {
+        u.startsWith("ws://") || u.startsWith("wss://")        -> "WebSocket"
+        "graphql" in u                                          -> "GraphQL"
+        "jsonrpc" in u || "json-rpc" in u                       -> "JSON-RPC"
+        "swagger" in u || "openapi" in u || "api-docs" in u     -> "OpenAPI/Swagger"
+        ".wsdl" in u || "wsdl?" in u || "soapaction" in u       -> "SOAP"
+        "grpc" in u                                             -> "gRPC"
+        "/api/" in u || u.endsWith("/api") || "/rest/" in u ||
+            Regex("""://api[.\-]""").containsMatchIn(u) ||
+            Regex("""/v\d+(/|$|\?)""").containsMatchIn(u)        -> "REST"
+        else -> null
+    }
+}
+
+/**
+ * Collects the concrete API endpoints a web app uses, from signals already captured
+ * during the scan (no additional network fetches):
+ *   1. XHR/fetch requests intercepted while the page loaded (the real API calls)
+ *   2. absolute URLs and relative API paths embedded in the HTML source
+ *   3. script/stylesheet resource URLs that live on API hosts/paths
+ *   4. WebSocket endpoints and Socket.IO usage
+ *   5. protocol hints from response headers (SOAP, gRPC, …)
+ * Each distinct endpoint is returned as a DetectedApi with the endpoint URL and the
+ * source it was found in. Endpoints without a concrete URL carry a null endpoint.
+ */
+internal fun detectApis(
+    html: String,
+    headers: Map<String, String>,
+    scriptUrls: List<String>,
+    cssUrls: List<String> = emptyList(),
+    networkRequests: List<NetworkRequest> = emptyList(),
+): List<DetectedApi> {
+    val found = LinkedHashMap<String, DetectedApi>()
+    fun add(type: String, url: String?, source: String, confidence: Int) {
+        val clean = url?.trim()?.trimEnd('.', ',', ';', ')', '"', '\'')?.take(300)
+        val key = (type + "|" + (clean ?: "")).lowercase()
+        val existing = found[key]
+        if (existing == null || confidence > existing.confidence) {
+            found[key] = DetectedApi(type, confidence, source, clean)
+        }
+    }
+
+    // 1) Requests the page actually made
+    for (req in networkRequests) {
+        val cls = classifyApi(req.url) ?: if (req.type == "xhr") "REST" else continue
+        add(cls, req.url, "${req.method} request during page load", 90)
+    }
+
+    // 2) Resource URLs (scripts / stylesheets) on API hosts or paths
+    for (src in (scriptUrls + cssUrls)) {
+        val cls = classifyApi(src) ?: continue
+        add(cls, src, "Referenced resource URL", 70)
+    }
+
+    // 3) Absolute URLs embedded in the HTML source
+    val urlRe = Regex("""https?://[^\s"'<>()\\]+""", RegexOption.IGNORE_CASE)
+    for (m in urlRe.findAll(html).take(600)) {
+        val cls = classifyApi(m.value) ?: continue
+        add(cls, m.value, "URL in HTML source", 65)
+    }
+
+    // 4) Relative API paths in the HTML source
+    val relRe = Regex("""["'](/(?:api|rest|graphql|v\d+)[A-Za-z0-9/_\-.]{0,80})["']""", RegexOption.IGNORE_CASE)
+    for (m in relRe.findAll(html).take(200)) {
+        val path = m.groupValues[1]
+        add(classifyApi(path) ?: "REST", path, "API path in HTML source", 70)
+    }
+
+    // 5) WebSockets — not captured by the request interceptor, so scan the source
+    val wsRe = Regex("""wss?://[^\s"'<>()\\]+""", RegexOption.IGNORE_CASE)
+    for (m in wsRe.findAll(html).take(50)) add("WebSocket", m.value, "WebSocket URL in source", 85)
+    if (Regex("""new\s+WebSocket\s*\(""").containsMatchIn(html))
+        add("WebSocket", null, "new WebSocket() call in source", 80)
+    if ("socket.io" in html.lowercase() || scriptUrls.any { "socket.io" in it.lowercase() })
+        add("WebSocket", null, "Socket.IO library detected", 80)
+
+    // 6) Protocol hints from headers / inline markup without a concrete URL
     val lower = html.lowercase()
+    if (headers.keys.any { it.equals("soapaction", true) } || "soapenv:" in lower || "<wsdl" in lower)
+        add("SOAP", null, "WSDL/SOAP references detected", 85)
+    if (headers.values.any { "application/grpc" in it.lowercase() } || "grpc-web" in lower)
+        add("gRPC", null, "gRPC references detected", 85)
+    if ("__schema" in lower || "__typename" in lower)
+        add("GraphQL", null, "GraphQL schema references in HTML", 75)
 
-    // GraphQL
-    val graphqlEndpoint = Regex("""['"](/[a-z0-9/_-]*graphql[a-z0-9/_-]*)['"]""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.getOrNull(1)
-    if (lower.contains("graphql") || lower.contains("__schema") || lower.contains("__typename")) {
-        results += DetectedApi("GraphQL", 85, "GraphQL references found in HTML", graphqlEndpoint)
-    } else if (scriptUrls.any { "graphql" in it.lowercase() }) {
-        results += DetectedApi("GraphQL", 70, "GraphQL script URL detected", null)
-    }
-
-    // OpenAPI / Swagger
-    if (lower.contains("swagger") || lower.contains("openapi") || lower.contains("api-docs")) {
-        val swaggerEndpoint = Regex("""['"]([^'"]*(?:swagger|openapi|api-docs)[^'"]*)['"]""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.getOrNull(1)
-        results += DetectedApi("OpenAPI/Swagger", 90, "Swagger/OpenAPI reference found in HTML", swaggerEndpoint?.take(80))
-    }
-
-    // REST (API path patterns)
-    val restMatches = Regex("""['"](/(?:api|v\d+)/[a-z0-9/_-]{2,40})['"]""", RegexOption.IGNORE_CASE)
-        .findAll(html).map { it.groupValues[1] }.distinct().take(3).toList()
-    if (restMatches.isNotEmpty()) {
-        results += DetectedApi("REST", 70, "${restMatches.size} API path(s) in HTML", restMatches.first())
-    }
-
-    // SOAP
-    if (lower.contains("wsdl") || lower.contains("soapenv:") || lower.contains("soap:") ||
-        headers.keys.any { it.lowercase() == "soapaction" }) {
-        results += DetectedApi("SOAP", 85, "WSDL/SOAP references detected")
-    }
-
-    // gRPC
-    if (lower.contains("grpc") || headers.values.any { "application/grpc" in it.lowercase() }) {
-        results += DetectedApi("gRPC", 85, "gRPC references detected")
-    }
-
-    // JSON-RPC
-    if (lower.contains("jsonrpc") || lower.contains("json-rpc")) {
-        results += DetectedApi("JSON-RPC", 80, "JSON-RPC references found in HTML")
-    }
-
-    return results.distinctBy { it.type }.sortedByDescending { it.confidence }
+    return found.values.sortedWith(
+        compareByDescending<DetectedApi> { it.endpoint != null }
+            .thenBy { it.type }
+            .thenByDescending { it.confidence }
+    )
 }
 
 private fun String.extractCN(): String =

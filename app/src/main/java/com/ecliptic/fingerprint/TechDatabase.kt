@@ -9,7 +9,29 @@ data class DomCheck(
     val selector: String,
     val attributes: Map<String, String> = emptyMap(),
     val text: String? = null,
-)
+    val properties: Map<String, String> = emptyMap(),
+) {
+    /** True when the check verifies more than mere element existence. */
+    fun hasConstraints(): Boolean =
+        attributes.isNotEmpty() || text != null || properties.isNotEmpty()
+}
+
+/**
+ * A selector is "generic" when it targets common structural elements with no id,
+ * class, attribute, or custom-element qualifier — e.g. "div", "body > div", "main".
+ * Such a selector matches almost every page, so an existence-only check on it is
+ * worthless for fingerprinting and produces false positives.
+ */
+internal fun isGenericSelector(selector: String): Boolean {
+    val s = selector.trim()
+    if (s.isEmpty()) return true
+    // Any qualifier makes it specific enough to keep.
+    if (s.any { it == '#' || it == '.' || it == '[' || it == ':' }) return false
+    // Custom elements (contain a hyphen in the tag) are specific, e.g. "model-viewer".
+    if (s.any { it == '-' }) return false
+    // Otherwise it's only tag names / combinators (div, body, main, body > div, ...).
+    return true
+}
 
 data class TechEntry(
     val name: String,
@@ -43,9 +65,12 @@ class TechDatabase private constructor(
         val allChecks = linkedMapOf<String, DomCheck>()
         for (entry in entries) {
             for (check in entry.dom) {
+                // Skip existence-only checks on overly-generic selectors: a bare
+                // selector like "body > div" or "div" exists on almost every page
+                // and would assert a technology on nearly every site (false positive).
+                if (!check.hasConstraints() && isGenericSelector(check.selector)) continue
                 val existing = allChecks[check.selector]
-                if (existing == null || (existing.attributes.isEmpty() && existing.text == null
-                        && (check.attributes.isNotEmpty() || check.text != null))) {
+                if (existing == null || (!existing.hasConstraints() && check.hasConstraints())) {
                     allChecks[check.selector] = check
                 }
             }
@@ -173,8 +198,15 @@ class TechDatabase private constructor(
                                     if (pattern.isNotBlank()) attrs[attrName] = pattern
                                 }
                             }
+                            val props = mutableMapOf<String, String>()
+                            checkObj.optJSONObject("properties")?.let { propsObj ->
+                                propsObj.keys().forEach { propName ->
+                                    // Value may be "" (presence check) or a regex pattern
+                                    props[propName] = propsObj.optString(propName)
+                                }
+                            }
                             val text = checkObj.optString("text").takeIf { it.isNotBlank() }
-                            result += DomCheck(selector, attrs, text)
+                            result += DomCheck(selector, attrs, text, props)
                         }
                         result
                     }
@@ -216,6 +248,14 @@ class TechDatabase private constructor(
                     if (!firstAttr) sb.append(",")
                     firstAttr = false
                     sb.append('"').append(attrName.jsEscape()).append('"')
+                    sb.append(":\"").append(pattern.jsEscape()).append('"')
+                }
+                sb.append("},\"p\":{")
+                var firstProp = true
+                for ((propName, pattern) in check.properties) {
+                    if (!firstProp) sb.append(",")
+                    firstProp = false
+                    sb.append('"').append(propName.jsEscape()).append('"')
                     sb.append(":\"").append(pattern.jsEscape()).append('"')
                 }
                 sb.append("},\"t\":")

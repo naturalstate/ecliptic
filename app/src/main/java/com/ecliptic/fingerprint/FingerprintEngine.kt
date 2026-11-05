@@ -4,6 +4,9 @@ import com.ecliptic.scanner.RawSignals
 
 object FingerprintEngine {
 
+    // Category 12 in the webappanalyzer DB; name as resolved from categories.json.
+    private const val JS_FRAMEWORK_CATEGORY = "JavaScript frameworks"
+
     fun detect(signals: RawSignals, db: TechDatabase): List<Technology> {
         val detected = mutableMapOf<String, Technology>()
 
@@ -47,6 +50,17 @@ object FingerprintEngine {
             val requiresCatFailed = entry.requiresCategory.isNotEmpty() &&
                 entry.requiresCategory.none { it in detectedCatIds }
             requiresFailed || requiresCatFailed
+        }
+
+        // Strict framework gate: client-side JS frameworks (React, Vue, Svelte,
+        // Angular, …) are high-value, high-false-positive detections. Only keep one
+        // when it was matched directly by a strong signal — a specific JS global,
+        // script URL, HTML/meta pattern, or a verified DOM constraint. Drop hits that
+        // exist only because another technology "implies" them, which is how minor
+        // third-party widgets were dragging in Svelte/React on unrelated sites.
+        allDetected.entries.removeAll { (_, tech) ->
+            val isJsFramework = tech.categories.contains(JS_FRAMEWORK_CATEGORY)
+            isJsFramework && tech.detectionMethod?.startsWith("Implied by") == true
         }
 
         return allDetected.values

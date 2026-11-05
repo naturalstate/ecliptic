@@ -11,6 +11,8 @@ import com.ecliptic.scanner.ConsoleMessage
 import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RepeaterResponse
+import com.ecliptic.scanner.SpiderEngine
+import com.ecliptic.scanner.SpiderState
 import com.ecliptic.scanner.scanUrl
 import com.ecliptic.scanner.sendRequest
 import kotlinx.coroutines.async
@@ -70,6 +72,15 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow(ScanUiState())
     val state: StateFlow<ScanUiState> = _state.asStateFlow()
+
+    // ── Spider (site crawler) ──────────────────────────────────────────────
+    private val spider = SpiderEngine(viewModelScope)
+    val spiderState: StateFlow<SpiderState> = spider.state
+    fun startSpider(url: String) = spider.start(url)
+    fun pauseSpider()  = spider.pause()
+    fun resumeSpider() = spider.resume()
+    fun stopSpider()   = spider.stop()
+    fun resetSpider()  = spider.reset()
 
     private val snapshots = mutableListOf<ScanSnapshot>()
     private var currentSnapshotIdx = -1
@@ -303,8 +314,10 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onNewScan() {
+        spider.reset()
         _state.update {
             it.copy(
+                urlInput = "",
                 isScanning = false, hasScanned = false,
                 signals = null, techs = emptyList(),
                 rawRequest = "", repeaterResponse = null,

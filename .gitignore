@@ -18,3 +18,13 @@ app/build/
 stacksniff-mvp_claude.html
 stacksniff-mvp_gemini.html
 TODO.md
+
+# Signing secrets — never commit
+*.jks
+*.keystore
+
+# Crash logs & bulk downloads
+*.log
+hs_err_pid*
+drive-download-*.zip
+screenshots/*.zip

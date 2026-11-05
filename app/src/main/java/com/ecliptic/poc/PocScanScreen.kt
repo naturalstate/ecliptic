@@ -48,8 +48,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -121,6 +125,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -160,6 +165,7 @@ import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RdapResult
 import com.ecliptic.scanner.ReconFiles
 import com.ecliptic.scanner.RepeaterResponse
+import com.ecliptic.scanner.SpiderStatus
 import com.ecliptic.scanner.WebViewClients
 import com.ecliptic.scanner.fetchAsn
 import com.ecliptic.scanner.fetchReconFiles
@@ -596,7 +602,7 @@ fun PocScanScreen(
         // ── Sub-tab chips (INTEL / CODE only, hidden in fullscreen) ──────────
         if (!isFullScreen && hasScanned && !scanning && (bottomTab == TAB_INTEL || bottomTab == TAB_CODE)) {
             val subLabels = if (bottomTab == TAB_INTEL)
-                listOf("HEADERS", "SECURITY", "COOKIES", "APIS", "RECON", "NETWORK", "REQ/RES")
+                listOf("HEADERS", "SECURITY", "COOKIES", "APIS", "RECON", "SPIDER", "NETWORK", "REQ/RES")
             else listOf("SOURCE", "JS", "DOM", "NET", "CONSOLE")
             val currentSub = if (bottomTab == TAB_INTEL) intelSubTab else codeSubTab
             LazyRow(
@@ -677,8 +683,9 @@ fun PocScanScreen(
                     "intel_2" -> CookiesContent(richCookies = signals?.richCookies ?: emptyList(), cookies = signals?.cookies ?: emptyMap())
                     "intel_3" -> ApisContent(apis = signals?.detectedApis ?: emptyList())
                     "intel_4" -> ReconContent(url = signals?.finalUrl ?: urlInput)
-                    "intel_5" -> NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls, dns = signals?.let { null })
-                    "intel_6" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
+                    "intel_5" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput)
+                    "intel_6" -> NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls, dns = signals?.let { null })
+                    "intel_7" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_1"  -> JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap())
                     "code_2"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
@@ -1649,44 +1656,182 @@ private fun ApisContent(apis: List<DetectedApi>) {
         }
         return
     }
+    // Group by API type, preserving the detector's ordering (concrete endpoints first).
+    val grouped: List<Pair<String, List<DetectedApi>>> =
+        apis.groupBy { it.type }.toList()
+    val endpointCount = apis.count { it.endpoint != null }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "$endpointCount endpoint${if (endpointCount == 1) "" else "s"} · ${grouped.size} type${if (grouped.size == 1) "" else "s"}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp,
+                    modifier = Modifier.weight(1f),
+                )
                 TabCopyButton {
-                    apis.joinToString("\n\n") { api ->
+                    grouped.joinToString("\n\n") { (type, items) ->
                         buildString {
-                            appendLine("${api.type} (${api.confidence}%)")
-                            api.endpoint?.let { appendLine("Endpoint: $it") }
-                            append("Evidence: ${api.evidence}")
+                            appendLine("# $type")
+                            items.forEach { api ->
+                                append(api.endpoint ?: "(${api.evidence})")
+                                appendLine()
+                            }
+                        }.trimEnd()
+                    }
+                }
+            }
+        }
+        grouped.forEach { (type, items) ->
+            item(key = "api_type_$type") {
+                val accent = if (type == "WebSocket") Green else Teal
+                Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(type, color = accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Surface(color = accent.copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp)) {
+                                Text(
+                                    "${items.size}",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                        items.forEach { api ->
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                if (api.endpoint != null) {
+                                    Text(
+                                        api.endpoint, color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
+                                    )
+                                }
+                                Text(
+                                    api.evidence, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 10.sp, lineHeight = 13.sp,
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-        items(apis) { api ->
-            val confColor = when {
-                api.confidence >= 80 -> Green
-                api.confidence >= 50 -> Teal
-                else                 -> MaterialTheme.colorScheme.onSurfaceVariant
-            }
-            Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(api.type, color = Teal, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Surface(color = confColor.copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp)) {
-                            Text("${api.confidence}%", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), color = confColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
+    }
+}
+
+// ─── Spider tab ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun SpiderContent(viewModel: ScanViewModel, url: String) {
+    val spider by viewModel.spiderState.collectAsStateWithLifecycle()
+    val status = spider.status
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // ── Controls ──
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when (status) {
+                SpiderStatus.RUNNING -> {
+                    SpiderButton("Pause", Icons.Filled.Pause) { viewModel.pauseSpider() }
+                    SpiderButton("Stop", Icons.Filled.Stop, danger = true) { viewModel.stopSpider() }
+                }
+                SpiderStatus.PAUSED -> {
+                    SpiderButton("Resume", Icons.Filled.PlayArrow) { viewModel.resumeSpider() }
+                    SpiderButton("Stop", Icons.Filled.Stop, danger = true) { viewModel.stopSpider() }
+                }
+                else -> {
+                    SpiderButton(if (status == SpiderStatus.IDLE) "Start" else "Restart", Icons.Filled.PlayArrow) {
+                        viewModel.startSpider(url)
                     }
-                    api.endpoint?.let { ep ->
-                        Text(ep, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    if (spider.discovered.isNotEmpty()) {
+                        SpiderButton("Clear", Icons.Filled.Clear) { viewModel.resetSpider() }
                     }
-                    Text(api.evidence, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp)
                 }
             }
+            Spacer(Modifier.weight(1f))
+            if (status == SpiderStatus.RUNNING) {
+                CircularProgressIndicator(Modifier.size(18.dp), color = Teal, strokeWidth = 2.dp)
+            }
+        }
+
+        // ── Status line ──
+        val statusText = when (status) {
+            SpiderStatus.IDLE    -> "Idle — press Start to crawl this site"
+            SpiderStatus.RUNNING -> "Crawling… ${spider.visited} visited · ${spider.queued} queued"
+            SpiderStatus.PAUSED  -> "Paused — ${spider.discovered.size} URLs found"
+            SpiderStatus.DONE    -> "Done — ${spider.discovered.size} URLs" +
+                if (spider.fromSitemap) " (seeded from sitemap.xml)" else ""
+            SpiderStatus.STOPPED -> "Stopped — ${spider.discovered.size} URLs found"
+        }
+        Text(statusText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        spider.error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+        }
+        if (status == SpiderStatus.RUNNING && spider.currentUrl.isNotBlank()) {
+            Text(
+                spider.currentUrl,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 1,
+            )
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+
+        // ── URL list ──
+        if (spider.discovered.isEmpty()) {
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                Text("No URLs yet", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+            }
+        } else {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${spider.discovered.size} URL${if (spider.discovered.size == 1) "" else "s"}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                TabCopyButton { spider.discovered.joinToString("\n") }
+            }
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(spider.discovered) { u ->
+                    Text(
+                        u,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpiderButton(label: String, icon: ImageVector, danger: Boolean = false, onClick: () -> Unit) {
+    val color = if (danger) MaterialTheme.colorScheme.error else Teal
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = color.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, color),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(icon, label, modifier = Modifier.size(15.dp), tint = color)
+            Text(label, color = color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
