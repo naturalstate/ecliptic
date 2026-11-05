@@ -110,7 +110,18 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     fun navigateHistory(delta: Int) {
         val newIdx = (currentSnapshotIdx + delta).coerceIn(0, snapshots.lastIndex)
         if (newIdx == currentSnapshotIdx) return
+        // Persist the current scan's live capture back into its snapshot before leaving,
+        // so returning to it later restores its own data (not the next scan's).
+        if (currentSnapshotIdx in snapshots.indices) {
+            snapshots[currentSnapshotIdx] = snapshots[currentSnapshotIdx].copy(
+                networkRequests = _state.value.liveNetworkRequests,
+                consoleMessages = _state.value.consoleMessages,
+            )
+        }
         currentSnapshotIdx = newIdx
+        // Spider state is live and specific to the scan it was run against; switching
+        // to another scan must not carry it over.
+        spider.reset()
         val snap = snapshots[newIdx]
         _state.update {
             it.copy(
@@ -415,7 +426,15 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
         if (url.isBlank()) return
 
-        _state.update { it.copy(isScanning = true, scanStage = "Initializing…") }
+        // Each scan is its own "project" — clear the live Spider, network and console
+        // capture from any prior scan so data never bleeds between scans.
+        spider.reset()
+        _state.update {
+            it.copy(
+                isScanning = true, scanStage = "Initializing…",
+                liveNetworkRequests = emptyList(), consoleMessages = emptyList(),
+            )
+        }
         viewModelScope.launch {
             try {
                 val db = dbDeferred.await()
