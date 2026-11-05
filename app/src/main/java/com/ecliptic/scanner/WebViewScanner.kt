@@ -47,6 +47,14 @@ internal val httpClientNoRedirect = httpClient.newBuilder()
     .followSslRedirects(false)
     .build()
 
+// Some WAFs (e.g. Cloudflare Bot Fight Mode) block requests that claim to be a browser
+// but can't solve a JS challenge, returning 403/503/520-class errors; others block
+// obvious bot UAs. We try the browser UA first, then fall back to a plain tool UA.
+private const val BROWSER_UA = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 " +
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+private const val FALLBACK_UA = "Ecliptic/1.0 (+https://ryand202.sg-host.com/ecliptic/)"
+private val WAF_BLOCK_CODES = setOf(403, 429, 503, 520, 521, 522, 523, 524, 525, 526)
+
 // Builds the full harvest JS injected after onPageFinished
 private fun buildHarvestJs(jsPaths: Set<String>, domChecksJson: String): String {
     val pathsJson = buildJsonStringArray(jsPaths)
@@ -307,17 +315,15 @@ private fun buildJsonStringArray(items: Set<String>): String {
     return sb.toString()
 }
 
-suspend fun fetchTextContent(url: String): String {
-    return withContext(Dispatchers.IO) {
-        try {
-            val request = Request.Builder().url(url).build()
-            httpClient.newCall(request).execute().use { response ->
-                response.body?.string()?.take(500_000) ?: "// Empty response"
-            }
-        } catch (e: Exception) {
-            "// Failed to load: ${e.message}"
+suspend fun fetchTextContent(url: String): String = withContext(Dispatchers.IO) {
+    fun attempt(ua: String): String? = try {
+        val request = Request.Builder().url(url).header("User-Agent", ua).build()
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) null else response.body?.string()?.take(500_000)
         }
-    }
+    } catch (_: Exception) { null }
+    // Browser UA first, plain UA fallback — same WAF handling as the header fetch.
+    attempt(BROWSER_UA) ?: attempt(FALLBACK_UA) ?: "// Failed to load"
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -791,7 +797,12 @@ private fun fetchHeaders(
     body: String = "",
     client: OkHttpClient = httpClient,
 ): FetchedHeaders {
-    return try {
+    // Respect an explicit User-Agent supplied via custom headers (e.g. Repeater raw
+    // mode); otherwise try the browser UA first and fall back to a plain UA on a
+    // WAF-style block so Cloudflare-protected sites still return real headers.
+    val hasCustomUa = customHeaders.keys.any { it.equals("User-Agent", ignoreCase = true) }
+
+    fun attempt(uaOverride: String?): FetchedHeaders? = try {
         val reqBody: RequestBody? = when {
             method == "HEAD" || method == "OPTIONS" -> null
             method == "GET" && body.isBlank() -> null
@@ -801,7 +812,10 @@ private fun fetchHeaders(
         val request = Request.Builder()
             .url(url)
             .method(method, reqBody)
-            .apply { customHeaders.forEach { (k, v) -> header(k, v) } }
+            .apply {
+                customHeaders.forEach { (k, v) -> header(k, v) }
+                if (uaOverride != null && !hasCustomUa) header("User-Agent", uaOverride)
+            }
             .build()
         client.newCall(request).execute().use { response ->
             response.body?.close()
@@ -835,7 +849,16 @@ private fun fetchHeaders(
             val richCookies = response.headers.values("set-cookie").map { parseSetCookieHeader(it) }
             FetchedHeaders(reqHeaders, resHeaders, tls, richCookies)
         }
-    } catch (e: Exception) {
-        FetchedHeaders(emptyMap(), mapOf("_header_error" to (e.message ?: "failed")))
+    } catch (e: Exception) { null }
+
+    val first = attempt(if (hasCustomUa) null else BROWSER_UA)
+    if (!hasCustomUa) {
+        val code = first?.response?.get("_status")?.toIntOrNull()
+        if (first == null || code == null || code in WAF_BLOCK_CODES) {
+            val second = attempt(FALLBACK_UA)
+            val scode = second?.response?.get("_status")?.toIntOrNull()
+            if (second != null && scode != null && scode !in WAF_BLOCK_CODES) return second
+        }
     }
+    return first ?: FetchedHeaders(emptyMap(), mapOf("_header_error" to "failed"))
 }
