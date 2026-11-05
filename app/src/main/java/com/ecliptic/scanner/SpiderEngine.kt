@@ -54,6 +54,10 @@ class SpiderEngine(private val scope: CoroutineScope) {
         private const val MAX_SITEMAPS  = 8       // cap sitemap files fetched
         private const val UA = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+        // Some WAFs (e.g. Cloudflare Bot Fight Mode) 520/403 browser-looking UAs that
+        // can't solve a JS challenge, while allowing a plain tool UA. Others do the
+        // opposite. So we try the browser UA first and fall back to this on failure.
+        private const val FALLBACK_UA = "Ecliptic/1.0 (+https://ryand202.sg-host.com/ecliptic/)"
     }
 
     private val _state = MutableStateFlow(SpiderState())
@@ -170,29 +174,33 @@ class SpiderEngine(private val scope: CoroutineScope) {
 
     /** Fetch a URL, returning (finalUrlAfterRedirects, htmlBody) or null. */
     private suspend fun fetchPage(url: String): Pair<String, String>? = withContext(Dispatchers.IO) {
-        try {
-            val req = Request.Builder().url(url).header("User-Agent", UA).build()
-            httpClient.newCall(req).execute().use { resp ->
-                val finalUrl = resp.request.url.toString()
-                if (!resp.isSuccessful) return@use null
-                val ct = resp.header("Content-Type") ?: ""
-                if (ct.isNotBlank() && !ct.contains("html", ignoreCase = true)) return@use null
-                val body = resp.body?.string()?.take(MAX_BYTES) ?: return@use null
-                finalUrl to body
-            }
-        } catch (_: Exception) { null }
+        fetchPageWith(url, UA) ?: fetchPageWith(url, FALLBACK_UA)
     }
+
+    private fun fetchPageWith(url: String, ua: String): Pair<String, String>? = try {
+        val req = Request.Builder().url(url).header("User-Agent", ua).build()
+        httpClient.newCall(req).execute().use { resp ->
+            val finalUrl = resp.request.url.toString()
+            if (!resp.isSuccessful) return@use null
+            val ct = resp.header("Content-Type") ?: ""
+            if (ct.isNotBlank() && !ct.contains("html", ignoreCase = true)) return@use null
+            val body = resp.body?.string()?.take(MAX_BYTES) ?: return@use null
+            finalUrl to body
+        }
+    } catch (_: Exception) { null }
 
     /** Fetch any text resource (e.g. XML sitemap, robots.txt). */
     private suspend fun fetchText(url: String): String? = withContext(Dispatchers.IO) {
-        try {
-            val req = Request.Builder().url(url).header("User-Agent", UA).build()
-            httpClient.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@use null
-                resp.body?.string()?.take(2_000_000)
-            }
-        } catch (_: Exception) { null }
+        fetchTextWith(url, UA) ?: fetchTextWith(url, FALLBACK_UA)
     }
+
+    private fun fetchTextWith(url: String, ua: String): String? = try {
+        val req = Request.Builder().url(url).header("User-Agent", ua).build()
+        httpClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return@use null
+            resp.body?.string()?.take(2_000_000)
+        }
+    } catch (_: Exception) { null }
 
     private suspend fun collectSitemapPageUrls(base: String, hostKey: String): List<String> {
         val origin = originOf(base) ?: return emptyList()

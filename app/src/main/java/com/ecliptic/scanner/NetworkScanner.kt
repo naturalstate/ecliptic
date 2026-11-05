@@ -85,6 +85,8 @@ private val RDAP_ENDPOINTS = listOf(
 )
 
 private val USER_AGENT = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+// Fallback for WAFs (e.g. Cloudflare Bot Fight Mode) that block browser-looking UAs.
+private const val FALLBACK_UA = "Ecliptic/1.0 (+https://ryand202.sg-host.com/ecliptic/)"
 
 suspend fun fetchRdapInfo(domain: String): RdapResult = withContext(Dispatchers.IO) {
     val encoded = URLEncoder.encode(domain, "UTF-8")
@@ -168,14 +170,19 @@ suspend fun fetchReconFiles(baseUrl: String): ReconFiles = withContext(Dispatche
         "${u.scheme}://${u.host}${if (u.port > 0) ":${u.port}" else ""}"
     } catch (_: Exception) { baseUrl.trimEnd('/') }
 
-    // Accepts an absolute URL or a path relative to the origin.
-    fun fetch(pathOrUrl: String): String? = try {
-        val url = if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) pathOrUrl else "$base$pathOrUrl"
-        val req = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
+    // Accepts an absolute URL or a path relative to the origin. Tries the browser UA
+    // first, then a plain UA as a fallback for WAFs that block one or the other.
+    fun attempt(url: String, ua: String): String? = try {
+        val req = Request.Builder().url(url).header("User-Agent", ua).build()
         httpClient.newCall(req).execute().use { resp ->
             if (resp.isSuccessful) resp.body?.string()?.take(50_000) else null
         }
     } catch (_: Exception) { null }
+
+    fun fetch(pathOrUrl: String): String? {
+        val url = if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) pathOrUrl else "$base$pathOrUrl"
+        return attempt(url, USER_AGENT) ?: attempt(url, FALLBACK_UA)
+    }
 
     val robots = fetch("/robots.txt")
 
