@@ -243,7 +243,7 @@ class SpiderEngine(private val scope: CoroutineScope) {
         return pages.toList()
     }
 
-    private fun extractLinks(html: String, baseUrl: String, hostKey: String): List<String> {
+    internal fun extractLinks(html: String, baseUrl: String, hostKey: String): List<String> {
         val base = try { URI(baseUrl) } catch (_: Exception) { return emptyList() }
         val out = LinkedHashSet<String>()
         for (m in Regex("""<a\b[^>]*?\bhref\s*=\s*["']([^"'>]+)["']""", RegexOption.IGNORE_CASE).findAll(html)) {
@@ -261,7 +261,7 @@ class SpiderEngine(private val scope: CoroutineScope) {
     }
 
     /** Strip fragment, keep query. Returns null on parse failure. */
-    private fun normalizeUrl(url: String): String? = try {
+    internal fun normalizeUrl(url: String): String? = try {
         val u = URI(url)
         buildString {
             append(u.scheme).append("://").append(u.host)
@@ -271,10 +271,10 @@ class SpiderEngine(private val scope: CoroutineScope) {
         }
     } catch (_: Exception) { null }
 
-    private fun sameHost(url: String, hostKey: String): Boolean = hostKeyOf(url) == hostKey
+    internal fun sameHost(url: String, hostKey: String): Boolean = hostKeyOf(url) == hostKey
 
     /** Lowercased host with a leading "www." removed, or null. */
-    private fun hostKeyOf(url: String): String? =
+    internal fun hostKeyOf(url: String): String? =
         try { URI(url).host?.lowercase()?.removePrefix("www.") } catch (_: Exception) { null }
 
     private fun originOf(url: String): String? = try {

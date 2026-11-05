@@ -688,7 +688,7 @@ fun PocScanScreen(
                     "intel_3" -> SelectionContainer { ApisContent(apis = signals?.detectedApis ?: emptyList()) }
                     "intel_4" -> ReconContent(url = signals?.finalUrl ?: urlInput)
                     "intel_5" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput)
-                    "intel_6" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls, dns = signals?.let { null }) }
+                    "intel_6" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls) }
                     "intel_7" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_1"  -> SelectionContainer { JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap()) }
@@ -2780,7 +2780,7 @@ private fun extractSocialLinks(html: String): List<SocialLink> {
 }
 
 @Composable
-private fun NetworkContent(url: String, html: String, tls: TlsResult? = null, dns: Nothing? = null) {
+private fun NetworkContent(url: String, html: String, tls: TlsResult? = null) {
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
 
