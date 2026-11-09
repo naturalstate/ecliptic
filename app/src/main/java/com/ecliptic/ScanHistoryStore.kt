@@ -4,8 +4,12 @@ import android.content.Context
 import com.ecliptic.fingerprint.Technology
 import com.ecliptic.scanner.CookieInfo
 import com.ecliptic.scanner.DetectedApi
+import com.ecliptic.scanner.DnsResult
 import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
+import com.ecliptic.scanner.RdapResult
+import com.ecliptic.scanner.ReconData
+import com.ecliptic.scanner.ReconFiles
 import com.ecliptic.scanner.TlsResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -67,6 +71,9 @@ private fun ScanSnapshot.toJson(saveHtmlSource: Boolean): JSONObject {
         put("wizardHeaders", JSONArray().also { arr ->
             wizardHeaders.forEach { (k, v) -> arr.put(JSONArray().put(k).put(v)) }
         })
+        // Recon (WHOIS/DNS/ASN/robots/security.txt/sitemap) — small, always retained so a
+        // revisited scan restores its recon without re-hitting the network.
+        reconData?.let { put("reconData", it.toJson()) }
         // Small fields — always retained so a revisited scan keeps JS globals,
         // source file lists and meta even after an app restart.
         put("globals", JSONObject().also { o -> sig.globals.forEach { (k, v) -> o.put(k, v?.toString() ?: "true") } })
@@ -114,6 +121,7 @@ private fun JSONObject.toScanSnapshot(): ScanSnapshot {
             pair.getString(0) to pair.getString(1)
         }
     } ?: emptyList()
+    val reconData       = optJSONObject("reconData")?.toReconData()
 
     val signals = RawSignals(
         url = url, finalUrl = url,
@@ -147,6 +155,7 @@ private fun JSONObject.toScanSnapshot(): ScanSnapshot {
         rawRequest = rawRequest,
         wizardUrl = wizardUrl,
         wizardHeaders = wizardHeaders,
+        reconData = reconData,
     )
 }
 
@@ -246,6 +255,74 @@ private fun JSONObject.toNetworkRequest() = NetworkRequest(
     type = optString("type", "other"),
     method = optString("method", "GET"),
     timestamp = optLong("timestamp", 0L),
+)
+
+private fun ReconData.toJson() = JSONObject().apply {
+    dns?.let { put("dns", it.toJson()) }
+    rdap?.let { put("rdap", it.toJson()) }
+    files?.let { put("files", it.toJson()) }
+    asn?.let { put("asn", it) }
+    put("fetchedAt", fetchedAt)
+}
+
+private fun JSONObject.toReconData() = ReconData(
+    dns = optJSONObject("dns")?.toDnsResult(),
+    rdap = optJSONObject("rdap")?.toRdapResult(),
+    files = optJSONObject("files")?.toReconFiles(),
+    asn = optString("asn").ifBlank { null },
+    fetchedAt = optLong("fetchedAt", 0L),
+)
+
+private fun DnsResult.toJson() = JSONObject().apply {
+    put("a", JSONArray(aRecords))
+    put("cname", JSONArray(cnameRecords))
+    put("mx", JSONArray(mxRecords))
+    put("ns", JSONArray(nsRecords))
+    put("txt", JSONArray(txtRecords))
+    error?.let { put("error", it) }
+}
+
+private fun JSONObject.toDnsResult() = DnsResult(
+    aRecords = optJSONArray("a")?.toStringList() ?: emptyList(),
+    cnameRecords = optJSONArray("cname")?.toStringList() ?: emptyList(),
+    mxRecords = optJSONArray("mx")?.toStringList() ?: emptyList(),
+    nsRecords = optJSONArray("ns")?.toStringList() ?: emptyList(),
+    txtRecords = optJSONArray("txt")?.toStringList() ?: emptyList(),
+    error = optString("error").ifBlank { null },
+)
+
+private fun RdapResult.toJson() = JSONObject().apply {
+    registrar?.let { put("registrar", it) }
+    registrant?.let { put("registrant", it) }
+    created?.let { put("created", it) }
+    expires?.let { put("expires", it) }
+    updated?.let { put("updated", it) }
+    put("status", JSONArray(status))
+    put("nameServers", JSONArray(nameServers))
+    error?.let { put("error", it) }
+}
+
+private fun JSONObject.toRdapResult() = RdapResult(
+    registrar = optString("registrar").ifBlank { null },
+    registrant = optString("registrant").ifBlank { null },
+    created = optString("created").ifBlank { null },
+    expires = optString("expires").ifBlank { null },
+    updated = optString("updated").ifBlank { null },
+    status = optJSONArray("status")?.toStringList() ?: emptyList(),
+    nameServers = optJSONArray("nameServers")?.toStringList() ?: emptyList(),
+    error = optString("error").ifBlank { null },
+)
+
+private fun ReconFiles.toJson() = JSONObject().apply {
+    robotsTxt?.let { put("robots", it) }
+    securityTxt?.let { put("security", it) }
+    sitemapXml?.let { put("sitemap", it) }
+}
+
+private fun JSONObject.toReconFiles() = ReconFiles(
+    robotsTxt = optString("robots").ifBlank { null },
+    securityTxt = optString("security").ifBlank { null },
+    sitemapXml = optString("sitemap").ifBlank { null },
 )
 
 private fun Map<String, String>.toJsonObject() = JSONObject().also { obj -> forEach { (k, v) -> obj.put(k, v) } }

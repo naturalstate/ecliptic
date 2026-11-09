@@ -1,6 +1,8 @@
 package com.ecliptic.scanner
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONArray
@@ -206,6 +208,37 @@ suspend fun fetchReconFiles(baseUrl: String): ReconFiles = withContext(Dispatche
         robotsTxt  = robots,
         securityTxt = fetch("/.well-known/security.txt") ?: fetch("/security.txt"),
         sitemapXml  = sitemap,
+    )
+}
+
+/**
+ * Aggregated recon result for one scan. Produced once by [fetchReconData] and cached
+ * in the ViewModel + persisted per snapshot, so reopening the Recon/Network tab or a
+ * past scan never re-hits the network, and the report can include everything.
+ */
+data class ReconData(
+    val dns: DnsResult? = null,
+    val rdap: RdapResult? = null,
+    val files: ReconFiles? = null,
+    val asn: String? = null,
+    val fetchedAt: Long = 0L,
+) {
+    val isEmpty: Boolean get() = dns == null && rdap == null && files == null && asn == null
+}
+
+/** Runs DNS + RDAP + recon files (+ ASN from first A record) in parallel, once. */
+suspend fun fetchReconData(url: String, host: String?): ReconData = coroutineScope {
+    val filesD = async { runCatching { fetchReconFiles(url) }.getOrNull() }
+    val rdapD  = host?.let { h -> async { runCatching { fetchRdapInfo(h) }.getOrNull() } }
+    val dnsD   = host?.let { h -> async { runCatching { fetchDnsRecords(h) }.getOrNull() } }
+    val dns = dnsD?.await()
+    val asn = dns?.aRecords?.firstOrNull()?.let { ip -> runCatching { fetchAsn(ip) }.getOrNull() }
+    ReconData(
+        dns = dns,
+        rdap = rdapD?.await(),
+        files = filesD.await(),
+        asn = asn,
+        fetchedAt = System.currentTimeMillis(),
     )
 }
 

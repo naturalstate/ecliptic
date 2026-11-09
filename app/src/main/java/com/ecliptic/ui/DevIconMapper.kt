@@ -158,4 +158,61 @@ object DevIconMapper {
 
     fun iconUrl(slug: String): String =
         "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/$slug/$slug-original.svg"
+
+    // ── Simple Icons fallback ──────────────────────────────────────────────────
+    // devicon is a dev-tool icon set — it lacks many brand/product logos (Shopify,
+    // Stripe, social platforms, credit cards) and for some only ships a "-plain"
+    // variant that our "-original" URL misses. For those we fall back to Simple
+    // Icons' colored CDN (cdn.simpleicons.org), which has ~3000 verified brands.
+    // Slugs below were checked against the Simple Icons slug table.
+    private val simpleIconSlugs = mapOf(
+        // E-commerce / CMS brands devicon lacks (or only has -plain)
+        "shopify"               to "shopify",
+        "woocommerce"           to "woocommerce",
+        "prestashop"            to "prestashop",
+        "ghost"                 to "ghost",
+        "contentful"            to "contentful",
+        "strapi"                to "strapi",
+        // Payments
+        "stripe"                to "stripe",
+        "paypal"                to "paypal",
+        "klarna"                to "klarna",
+        "square"                to "square",
+        "google pay"            to "googlepay",
+        "apple pay"             to "applepay",
+        // Credit-card brands (grouped tech has no icon; individual ones do)
+        "visa"                  to "visa",
+        "mastercard"            to "mastercard",
+        "american express"      to "americanexpress",
+        "discover"              to "discover",
+        "jcb"                   to "jcb",
+        "diners club"           to "dinersclub",
+        // Social platforms (used in the Social Links sections)
+        "twitter / x"           to "x",
+        "twitter"               to "x",
+        "x"                     to "x",
+        "facebook"              to "facebook",
+        "instagram"             to "instagram",
+        "youtube"               to "youtube",
+        "tiktok"                to "tiktok",
+        "pinterest"             to "pinterest",
+        "discord"               to "discord",
+        "whatsapp"              to "whatsapp",
+        "telegram"              to "telegram",
+        // LinkedIn & Magento are absent from Simple Icons (trademark/removed) → no icon.
+    )
+
+    private fun simpleIconUrl(slug: String) = "https://cdn.simpleicons.org/$slug"
+
+    /**
+     * Resolve the best icon URL for a technology / platform name, or null if we have
+     * no icon. Simple Icons fills the gaps devicon can't; devicon keeps its full-color
+     * logos for everything it reliably has.
+     */
+    fun iconUrlFor(name: String): String? {
+        val key = name.trim().lowercase()
+        simpleIconSlugs[key]?.let { return simpleIconUrl(it) }
+        slugMap[key]?.let { return iconUrl(it) }
+        return null
+    }
 }

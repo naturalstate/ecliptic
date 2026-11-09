@@ -13,6 +13,7 @@ fun generateHtmlReport(
     includeFullHtml: Boolean = false,
     includeDomTree: Boolean = false,
     darkMode: Boolean = false,
+    recon: ReconData? = null,
 ): String {
     val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
     val grouped = techs.groupBy { it.categories.firstOrNull() ?: "Other" }
@@ -41,9 +42,9 @@ fun generateHtmlReport(
                 append("<div class='section-label'>${esc(cat)}</div>")
                 append("<table>")
                 for (t in list.sortedBy { it.name }) {
-                    val slug = DevIconMapper.slugFor(t.name)
-                    val icon = if (slug != null)
-                        "<img class='ico' src='${DevIconMapper.iconUrl(slug)}' alt='' onerror=\"this.style.display='none'\"/>" else ""
+                    val iconUrl = DevIconMapper.iconUrlFor(t.name)
+                    val icon = if (iconUrl != null)
+                        "<img class='ico' src='$iconUrl' alt='' onerror=\"this.style.display='none'\"/>" else ""
                     val ver = t.version?.let { " <span class='ver'>$it</span>" } ?: ""
                     val conf = if (t.confidence < 100) " <span class='badge'>~${t.confidence}%</span>" else ""
                     append("<tr><td>$icon${esc(t.name)}$ver$conf</td><td class='muted'>${esc(t.detectionMethod)}</td></tr>")
@@ -120,7 +121,12 @@ fun generateHtmlReport(
         if (found.isEmpty()) return "<p class='muted'>No social links found</p>"
         return buildString {
             append("<table>")
-            for ((name, url) in found) append("<tr><td>${esc(name)}</td><td class='mono'>${esc(url)}</td></tr>")
+            for ((name, url) in found) {
+                val ic = DevIconMapper.iconUrlFor(name)?.let {
+                    "<img class='ico' src='$it' alt='' onerror=\"this.style.display='none'\"/>"
+                } ?: ""
+                append("<tr><td>$ic${esc(name)}</td><td class='mono'>${esc(url)}</td></tr>")
+            }
             append("</table>")
         }
     }
@@ -185,6 +191,45 @@ fun generateHtmlReport(
                 append("</table>")
             }
         }
+    }
+
+    fun whoisHtml(): String {
+        val r = recon?.rdap ?: return "<p class='muted'>WHOIS data not fetched</p>"
+        if (r.error != null) return "<p class='muted'>${esc(r.error)}</p>"
+        return buildString {
+            append("<table>")
+            r.registrar?.let { append("<tr><td>Registrar</td><td>${esc(it)}</td></tr>") }
+            r.registrant?.let { append("<tr><td>Registrant</td><td>${esc(it)}</td></tr>") }
+            r.created?.let { append("<tr><td>Created</td><td class='mono'>${esc(it)}</td></tr>") }
+            r.expires?.let { append("<tr><td>Expires</td><td class='mono'>${esc(it)}</td></tr>") }
+            r.updated?.let { append("<tr><td>Updated</td><td class='mono'>${esc(it)}</td></tr>") }
+            if (r.status.isNotEmpty()) append("<tr><td>Status</td><td class='mono'>${esc(r.status.joinToString(", "))}</td></tr>")
+            if (r.nameServers.isNotEmpty()) append("<tr><td>Name servers</td><td class='mono'>${esc(r.nameServers.joinToString(", "))}</td></tr>")
+            append("</table>")
+        }
+    }
+
+    fun dnsHtml(): String {
+        val d = recon?.dns ?: return "<p class='muted'>DNS not fetched</p>"
+        if (d.error != null) return "<p class='muted'>${esc(d.error)}</p>"
+        val groups = listOf(
+            "A" to d.aRecords, "CNAME" to d.cnameRecords, "MX" to d.mxRecords,
+            "NS" to d.nsRecords, "TXT" to d.txtRecords,
+        ).filter { it.second.isNotEmpty() }
+        if (groups.isEmpty()) return "<p class='muted'>No DNS records found</p>"
+        return buildString {
+            append("<table>")
+            for ((type, list) in groups) {
+                append("<tr><td>${esc(type)}</td><td class='mono'>${list.joinToString("<br>") { esc(it) }}</td></tr>")
+            }
+            recon?.asn?.let { append("<tr><td>ASN</td><td class='mono'>${esc(it)}</td></tr>") }
+            append("</table>")
+        }
+    }
+
+    fun reconFileHtml(label: String, txt: String?): String {
+        if (txt.isNullOrBlank()) return "<p class='muted'>$label not found</p>"
+        return "<pre class='code'>${esc(txt.take(20_000))}</pre>"
     }
 
     val statusCode = signals.headers["_status"] ?: "—"
@@ -261,6 +306,12 @@ ${stringsHtml()}
 <h2>Social Links</h2>
 ${socialHtml()}
 
+<h2>WHOIS / Registrar</h2>
+${whoisHtml()}
+
+<h2>DNS Records</h2>
+${dnsHtml()}
+
 <h2>TLS / Certificate</h2>
 ${tlsHtml()}
 
@@ -273,6 +324,15 @@ ${networkHtml()}
 
 <h2>Source Files</h2>
 ${sourceFilesHtml()}
+
+<h2>robots.txt</h2>
+${reconFileHtml("robots.txt", recon?.files?.robotsTxt)}
+
+<h2>security.txt</h2>
+${reconFileHtml("security.txt", recon?.files?.securityTxt)}
+
+<h2>sitemap.xml</h2>
+${reconFileHtml("sitemap.xml", recon?.files?.sitemapXml)}
 
 <h2>Response Headers</h2>
 <table>${signals.headers.entries.filter { it.key != "_status" }.sortedBy { it.key }.joinToString("") { "<tr><td class='mono'>${esc(it.key)}</td><td class='mono'>${esc(it.value.take(220))}</td></tr>" }}</table>

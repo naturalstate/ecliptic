@@ -65,6 +65,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Search
@@ -169,6 +170,7 @@ import com.ecliptic.scanner.DetectedApi
 import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RdapResult
+import com.ecliptic.scanner.ReconData
 import com.ecliptic.scanner.ReconFiles
 import com.ecliptic.scanner.Extractor
 import com.ecliptic.scanner.RepeaterResponse
@@ -416,7 +418,7 @@ fun PocScanScreen(
 
     fun exportReport(includeFullHtml: Boolean = false, includeDomTree: Boolean = false, darkReport: Boolean = false) {
         val sig = signals ?: return
-        val html = generateHtmlReport(sig, techs, BuildConfig.VERSION_NAME, includeFullHtml, includeDomTree, darkReport)
+        val html = generateHtmlReport(sig, techs, BuildConfig.VERSION_NAME, includeFullHtml, includeDomTree, darkReport, recon = state.reconData)
         try {
             val dir = java.io.File(context.cacheDir, "reports").also { it.mkdirs() }
             val file = java.io.File(dir, "ecliptic_report_${System.currentTimeMillis()}.html")
@@ -551,7 +553,7 @@ fun PocScanScreen(
                         }
                     }
                     if (hasScanned && !scanning) {
-                        IconButton(onClick = { showShareSheet = true }, modifier = Modifier.size(40.dp)) {
+                        IconButton(onClick = { showShareSheet = true; viewModel.loadRecon() }, modifier = Modifier.size(40.dp)) {
                             Icon(Icons.Filled.Share, "Export report", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
                         IconButton(onClick = { viewModel.onNewScan(); bottomTab = TAB_TECH }, modifier = Modifier.size(40.dp)) {
@@ -725,10 +727,16 @@ fun PocScanScreen(
                     "intel_1" -> SecurityHeadersContent(responseHeaders = signals?.headers ?: emptyMap())
                     "intel_2" -> CookiesContent(richCookies = signals?.richCookies ?: emptyList(), cookies = signals?.cookies ?: emptyMap())
                     "intel_3" -> SelectionContainer { ApisContent(apis = signals?.detectedApis ?: emptyList()) }
-                    "intel_4" -> ReconContent(url = signals?.finalUrl ?: urlInput)
+                    "intel_4" -> ReconContent(
+                        url = signals?.finalUrl ?: urlInput,
+                        data = state.reconData,
+                        loading = state.reconLoading,
+                        onLoad = { viewModel.loadRecon() },
+                        onRefresh = { viewModel.loadRecon(force = true) },
+                    )
                     "intel_5" -> SelectionContainer { ParamContent(html = signals?.htmlSource ?: "") }
                     "intel_6" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput, onSendToRepeater = { viewModel.prefillRepeater(it); bottomTab = TAB_REPEAT })
-                    "intel_7" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls) }
+                    "intel_7" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls, dns = state.reconData?.dns, asn = state.reconData?.asn, loading = state.reconLoading, onLoad = { viewModel.loadRecon() }) }
                     "intel_8" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_1"  -> SelectionContainer { StringsContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), deepText = stringsDeepText, onDeepText = { stringsDeepText = it }) }
@@ -1312,14 +1320,14 @@ private fun TechIcon(
     tint: androidx.compose.ui.graphics.Color,
     modifier: Modifier = Modifier,
 ) {
-    val slug = remember(techName) { DevIconMapper.slugFor(techName) }
-    var showFallback by remember(slug) { mutableStateOf(slug == null) }
+    val iconUrl = remember(techName) { DevIconMapper.iconUrlFor(techName) }
+    var showFallback by remember(iconUrl) { mutableStateOf(iconUrl == null) }
 
     if (showFallback) {
         TechIconFallback(techName = techName, tint = tint, modifier = modifier)
     } else {
         AsyncImage(
-            model = DevIconMapper.iconUrl(slug!!),
+            model = iconUrl!!,
             contentDescription = null,
             modifier = modifier,
             colorFilter = ColorFilter.tint(tint, BlendMode.SrcIn),
@@ -2189,39 +2197,30 @@ private fun StringsContent(html: String, scriptUrls: List<String>, deepText: Str
 // ─── Recon tab ────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ReconContent(url: String) {
-    val scope = rememberCoroutineScope()
+private fun ReconContent(
+    url: String,
+    data: ReconData?,
+    loading: Boolean,
+    onLoad: () -> Unit,
+    onRefresh: () -> Unit,
+) {
     val uriHandler = LocalUriHandler.current
     val domain = remember(url) {
         try { java.net.URI(url).host?.removePrefix("www.") } catch (_: Exception) { null }
     }
 
-    var reconFiles    by remember { mutableStateOf<ReconFiles?>(null) }
-    var reconLoading  by remember { mutableStateOf(false) }
-    var rdapResult    by remember { mutableStateOf<RdapResult?>(null) }
-    var rdapLoading   by remember { mutableStateOf(false) }
+    // Recon is fetched once per scan and cached in the ViewModel; trigger the first
+    // load lazily, and let the user refresh. No re-fetch on every tab open.
+    LaunchedEffect(url) { if (url.isNotBlank()) onLoad() }
+
+    val reconFiles   = data?.files
+    val rdapResult   = data?.rdap
+    val reconLoading = loading
+    val rdapLoading  = loading
 
     var robotsExpanded   by remember { mutableStateOf(false) }
     var securityExpanded by remember { mutableStateOf(false) }
     var sitemapExpanded  by remember { mutableStateOf(false) }
-
-    LaunchedEffect(url) {
-        if (url.isBlank()) return@LaunchedEffect
-        reconLoading = true
-        rdapLoading  = true
-        scope.launch {
-            reconFiles   = fetchReconFiles(url)
-            reconLoading = false
-        }
-        if (domain != null) {
-            scope.launch {
-                rdapResult  = fetchRdapInfo(domain)
-                rdapLoading = false
-            }
-        } else {
-            rdapLoading = false
-        }
-    }
 
     if (url.isBlank()) {
         Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -2241,10 +2240,27 @@ private fun ReconContent(url: String) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(domain ?: url, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                TabCopyButton {
-                    buildString {
-                        appendLine("Archive: https://web.archive.org/web/*/$url")
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(domain ?: url, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    data?.takeIf { it.fetchedAt > 0L }?.let {
+                        Text(
+                            "Cached " + android.text.format.DateFormat.format("MMM d, HH:mm", it.fetchedAt),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            fontSize = 10.sp,
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onRefresh, enabled = !loading, modifier = Modifier.size(36.dp)) {
+                        if (loading) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Teal, strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Filled.Refresh, "Refresh recon", tint = Teal, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    TabCopyButton {
+                        buildString {
+                            appendLine("Archive: https://web.archive.org/web/*/$url")
                         appendLine()
                         rdapResult?.let { r ->
                             appendLine("WHOIS / REGISTRAR")
@@ -2271,7 +2287,8 @@ private fun ReconContent(url: String) {
                             appendLine("SITEMAP.XML")
                             appendLine(it.lines().take(50).joinToString("\n"))
                         }
-                    }.trim()
+                        }.trim()
+                    }
                 }
             }
         }
@@ -3152,30 +3169,29 @@ private fun extractSocialLinks(html: String): List<SocialLink> {
 }
 
 @Composable
-private fun NetworkContent(url: String, html: String, tls: TlsResult? = null) {
-    val scope = rememberCoroutineScope()
+private fun NetworkContent(
+    url: String,
+    html: String,
+    tls: TlsResult? = null,
+    dns: DnsResult? = null,
+    asn: String? = null,
+    loading: Boolean = false,
+    onLoad: () -> Unit = {},
+) {
     val uriHandler = LocalUriHandler.current
 
     val domain = remember(url) {
         try { java.net.URI(url).host?.removePrefix("www.") } catch (_: Exception) { null }
     }
 
-    var dnsResult by remember { mutableStateOf<DnsResult?>(null) }
-    var dnsLoading by remember { mutableStateOf(false) }
-    var asn by remember { mutableStateOf<String?>(null) }
+    // DNS/ASN come from the cached recon fetched once by the ViewModel; trigger the
+    // first load lazily (shared with the Recon tab — no duplicate network calls).
+    LaunchedEffect(url) { if (url.isNotBlank()) onLoad() }
+
+    val dnsResult = dns
+    val dnsLoading = loading && dns == null
 
     val socialLinks = remember(html) { extractSocialLinks(html) }
-
-    LaunchedEffect(domain) {
-        if (domain == null) return@LaunchedEffect
-        dnsLoading = true
-        scope.launch {
-            dnsResult = fetchDnsRecords(domain)
-            dnsLoading = false
-            // ASN lookup from first A record
-            dnsResult?.aRecords?.firstOrNull()?.let { ip -> asn = fetchAsn(ip) }
-        }
-    }
 
     if (domain == null) {
         Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -3272,8 +3288,16 @@ private fun NetworkContent(url: String, html: String, tls: TlsResult? = null) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
+                        DevIconMapper.iconUrlFor(link.platform)?.let { ic ->
+                            AsyncImage(
+                                model = ic,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                colorFilter = ColorFilter.tint(Teal, BlendMode.SrcIn),
+                            )
+                        }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(link.platform, color = Teal, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                             Text(

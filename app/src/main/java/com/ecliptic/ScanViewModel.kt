@@ -10,7 +10,9 @@ import com.ecliptic.fingerprint.Technology
 import com.ecliptic.scanner.ConsoleMessage
 import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
+import com.ecliptic.scanner.ReconData
 import com.ecliptic.scanner.RepeaterResponse
+import com.ecliptic.scanner.fetchReconData
 import com.ecliptic.scanner.SpiderEngine
 import com.ecliptic.scanner.SpiderState
 import com.ecliptic.scanner.scanUrl
@@ -33,6 +35,7 @@ data class ScanSnapshot(
     val rawRequest: String,
     val wizardUrl: String,
     val wizardHeaders: List<Pair<String, String>>,
+    val reconData: ReconData? = null,
 )
 
 data class ScanUiState(
@@ -63,6 +66,9 @@ data class ScanUiState(
     // Scan history navigation
     val historySize: Int = 0,
     val historyPosition: Int = 0,
+    // Recon (WHOIS / DNS / ASN / robots / security.txt / sitemap) — fetched once, cached
+    val reconData: ReconData? = null,
+    val reconLoading: Boolean = false,
 )
 
 class ScanViewModel(application: Application) : AndroidViewModel(application) {
@@ -135,7 +141,36 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 wizardHeaders = snap.wizardHeaders,
                 hasScanned = true,
                 historyPosition = newIdx + 1,
+                // Recon is per-scan; restore this snapshot's cached recon (if any).
+                reconData = snap.reconData,
+                reconLoading = false,
             )
+        }
+    }
+
+    /**
+     * Fetch recon data (WHOIS/DNS/ASN/robots/security.txt/sitemap) once for the current
+     * scan and cache it in state + the snapshot + disk. No-op if already loaded unless
+     * [force] (the Recon tab's manual refresh button).
+     */
+    fun loadRecon(force: Boolean = false) {
+        val s = _state.value
+        if (s.reconLoading) return
+        if (!force && s.reconData != null) return
+        val sig = s.signals ?: return
+        val url = sig.finalUrl.ifBlank { s.urlInput }.trim()
+        if (url.isBlank()) return
+        val host = runCatching { java.net.URI(url).host?.removePrefix("www.") }.getOrNull()
+        _state.update { it.copy(reconLoading = true) }
+        viewModelScope.launch {
+            val data = fetchReconData(url, host)
+            _state.update { it.copy(reconData = data, reconLoading = false) }
+            // Persist into the current snapshot (so revisiting restores it) + disk.
+            if (currentSnapshotIdx in snapshots.indices) {
+                snapshots[currentSnapshotIdx] = snapshots[currentSnapshotIdx].copy(reconData = data)
+                val saveHtml = AppPreferences.saveHtmlSourceFlow(appContext).first()
+                ScanHistoryStore.save(appContext, snapshots[currentSnapshotIdx], saveHtml)
+            }
         }
     }
 
@@ -164,6 +199,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                         hasScanned = true,
                         historySize = snapshots.size,
                         historyPosition = snapshots.size,
+                        reconData = latest.reconData,
                     )
                 }
             }
@@ -336,6 +372,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 wizardSent = false, wizardHeaders = emptyList(),
                 wizardBody = "", wizardMethod = "GET", wizardUrl = "",
                 liveNetworkRequests = emptyList(), consoleMessages = emptyList(),
+                reconData = null, reconLoading = false,
                 // historySize and historyPosition preserved so arrows remain visible
             )
         }
@@ -504,6 +541,8 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                         wizardSent = false,
                         historySize = snapshots.size,
                         historyPosition = snapshots.size,
+                        reconData = null,
+                        reconLoading = false,
                     )
                 }
             } catch (e: Exception) {
