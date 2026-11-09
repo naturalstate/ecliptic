@@ -5,11 +5,13 @@ import com.ecliptic.fingerprint.Technology
 import com.ecliptic.scanner.CookieInfo
 import com.ecliptic.scanner.DetectedApi
 import com.ecliptic.scanner.DnsResult
+import com.ecliptic.scanner.HostReputation
 import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RdapResult
 import com.ecliptic.scanner.ReconData
 import com.ecliptic.scanner.ReconFiles
+import com.ecliptic.scanner.SimilarDomain
 import com.ecliptic.scanner.TlsResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -262,6 +264,12 @@ private fun ReconData.toJson() = JSONObject().apply {
     rdap?.let { put("rdap", it.toJson()) }
     files?.let { put("files", it.toJson()) }
     asn?.let { put("asn", it) }
+    if (subdomains.isNotEmpty()) put("subdomains", JSONArray(subdomains))
+    if (ipNeighbors.isNotEmpty()) put("ipNeighbors", JSONArray(ipNeighbors))
+    reputation?.let { put("reputation", it.toJson()) }
+    if (similarDomains.isNotEmpty()) put("similarDomains", JSONArray().also { arr ->
+        similarDomains.forEach { s -> arr.put(JSONObject().put("domain", s.domain).put("registered", s.registered)) }
+    })
     put("fetchedAt", fetchedAt)
 }
 
@@ -270,7 +278,31 @@ private fun JSONObject.toReconData() = ReconData(
     rdap = optJSONObject("rdap")?.toRdapResult(),
     files = optJSONObject("files")?.toReconFiles(),
     asn = optString("asn").ifBlank { null },
+    subdomains = optJSONArray("subdomains")?.toStringList() ?: emptyList(),
+    ipNeighbors = optJSONArray("ipNeighbors")?.toStringList() ?: emptyList(),
+    reputation = optJSONObject("reputation")?.toHostReputation(),
+    similarDomains = optJSONArray("similarDomains")?.let { arr ->
+        (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { SimilarDomain(it.optString("domain"), it.optBoolean("registered")) }
+        }
+    } ?: emptyList(),
     fetchedAt = optLong("fetchedAt", 0L),
+)
+
+private fun HostReputation.toJson() = JSONObject().apply {
+    put("source", source)
+    put("listed", listed)
+    status?.let { put("status", it) }
+    detail?.let { put("detail", it) }
+    error?.let { put("error", it) }
+}
+
+private fun JSONObject.toHostReputation() = HostReputation(
+    source = optString("source", "URLhaus"),
+    listed = optBoolean("listed", false),
+    status = optString("status").ifBlank { null },
+    detail = optString("detail").ifBlank { null },
+    error = optString("error").ifBlank { null },
 )
 
 private fun DnsResult.toJson() = JSONObject().apply {

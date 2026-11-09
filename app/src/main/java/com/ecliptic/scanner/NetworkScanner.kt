@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
@@ -211,6 +212,16 @@ suspend fun fetchReconFiles(baseUrl: String): ReconFiles = withContext(Dispatche
     )
 }
 
+data class HostReputation(
+    val source: String = "URLhaus",
+    val listed: Boolean = false,
+    val status: String? = null,   // "clean" | "listed" | other query_status | null
+    val detail: String? = null,
+    val error: String? = null,
+)
+
+data class SimilarDomain(val domain: String, val registered: Boolean)
+
 /**
  * Aggregated recon result for one scan. Produced once by [fetchReconData] and cached
  * in the ViewModel + persisted per snapshot, so reopening the Recon/Network tab or a
@@ -221,25 +232,169 @@ data class ReconData(
     val rdap: RdapResult? = null,
     val files: ReconFiles? = null,
     val asn: String? = null,
+    val subdomains: List<String> = emptyList(),
+    val ipNeighbors: List<String> = emptyList(),
+    val reputation: HostReputation? = null,
+    val similarDomains: List<SimilarDomain> = emptyList(),
     val fetchedAt: Long = 0L,
 ) {
-    val isEmpty: Boolean get() = dns == null && rdap == null && files == null && asn == null
+    val isEmpty: Boolean get() = dns == null && rdap == null && files == null && asn == null &&
+        subdomains.isEmpty() && ipNeighbors.isEmpty() && reputation == null && similarDomains.isEmpty()
+
+    /** True only when the reverse-IP lookup actually returned something. */
+    val ipChecked: Boolean get() = ipNeighbors.isNotEmpty()
+
+    /** Exactly one site on the IP → dedicated. Only meaningful when [ipChecked]. */
+    val dedicatedIp: Boolean get() = ipNeighbors.size == 1
 }
 
-/** Runs DNS + RDAP + recon files (+ ASN from first A record) in parallel, once. */
+/**
+ * Runs the full recon suite in parallel, once: DNS, RDAP/WHOIS, recon files, ASN,
+ * subdomains (crt.sh), host reputation (URLhaus), typosquat/similar domains, and —
+ * once the A record is known — reverse-IP neighbors. Every lookup is best-effort:
+ * one failure never blocks the rest.
+ */
 suspend fun fetchReconData(url: String, host: String?): ReconData = coroutineScope {
     val filesD = async { runCatching { fetchReconFiles(url) }.getOrNull() }
     val rdapD  = host?.let { h -> async { runCatching { fetchRdapInfo(h) }.getOrNull() } }
     val dnsD   = host?.let { h -> async { runCatching { fetchDnsRecords(h) }.getOrNull() } }
+    val subsD  = host?.let { h -> async { runCatching { fetchSubdomains(h) }.getOrDefault(emptyList()) } }
+    val repD   = host?.let { h -> async { runCatching { fetchHostReputation(h) }.getOrNull() } }
+    val simD   = host?.let { h -> async { runCatching { fetchSimilarDomains(h) }.getOrDefault(emptyList()) } }
+
     val dns = dnsD?.await()
-    val asn = dns?.aRecords?.firstOrNull()?.let { ip -> runCatching { fetchAsn(ip) }.getOrNull() }
+    val ip  = dns?.aRecords?.firstOrNull()
+    val asn = ip?.let { runCatching { fetchAsn(it) }.getOrNull() }
+    val neighbors = ip?.let { runCatching { fetchIpNeighbors(it) }.getOrDefault(emptyList()) } ?: emptyList()
+
     ReconData(
         dns = dns,
         rdap = rdapD?.await(),
         files = filesD.await(),
         asn = asn,
+        subdomains = subsD?.await() ?: emptyList(),
+        ipNeighbors = neighbors,
+        reputation = repD?.await(),
+        similarDomains = simD?.await() ?: emptyList(),
         fetchedAt = System.currentTimeMillis(),
     )
+}
+
+/** Subdomains via crt.sh certificate transparency logs. */
+suspend fun fetchSubdomains(domain: String): List<String> = withContext(Dispatchers.IO) {
+    val encoded = URLEncoder.encode("%.$domain", "UTF-8")
+    try {
+        val req = Request.Builder()
+            .url("https://crt.sh/?q=$encoded&output=json")
+            .header("User-Agent", USER_AGENT)
+            .build()
+        httpClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext emptyList()
+            val body = resp.body?.string() ?: return@withContext emptyList()
+            val arr = runCatching { JSONArray(body) }.getOrNull() ?: return@withContext emptyList()
+            val set = sortedSetOf<String>()
+            for (i in 0 until arr.length()) {
+                val nv = arr.optJSONObject(i)?.optString("name_value") ?: continue
+                for (raw in nv.split("\n")) {
+                    val name = raw.trim().lowercase().removePrefix("*.")
+                    if (name.endsWith(domain) && name != domain && !name.contains(' ') && !name.contains('@')) set += name
+                }
+            }
+            set.toList().take(200)
+        }
+    } catch (_: Exception) { emptyList() }
+}
+
+/** Reverse-IP neighbors (other domains sharing the IP) via HackerTarget. */
+suspend fun fetchIpNeighbors(ip: String): List<String> = withContext(Dispatchers.IO) {
+    try {
+        val req = Request.Builder()
+            .url("https://api.hackertarget.com/reverseiplookup/?q=$ip")
+            .header("User-Agent", USER_AGENT)
+            .build()
+        httpClient.newCall(req).execute().use { resp ->
+            val body = resp.body?.string()?.trim() ?: return@withContext emptyList()
+            if (body.isBlank() || body.contains("API count exceeded") ||
+                body.startsWith("error", true) || body.contains("no records", true)) return@withContext emptyList()
+            body.lines().map { it.trim().lowercase() }
+                .filter { it.isNotBlank() && !it.contains(' ') && it.contains('.') }
+                .distinct().take(100)
+        }
+    } catch (_: Exception) { emptyList() }
+}
+
+/** Host reputation via abuse.ch URLhaus (best-effort; no key = graceful "unavailable"). */
+suspend fun fetchHostReputation(host: String): HostReputation = withContext(Dispatchers.IO) {
+    try {
+        val form = FormBody.Builder().add("host", host).build()
+        val req = Request.Builder().url("https://urlhaus-api.abuse.ch/v1/host/").post(form).build()
+        httpClient.newCall(req).execute().use { resp ->
+            val body = resp.body?.string() ?: return@withContext HostReputation(error = "No response")
+            val obj = runCatching { JSONObject(body) }.getOrNull()
+                ?: return@withContext HostReputation(error = "Unavailable")
+            when (val qs = obj.optString("query_status")) {
+                "no_results" -> HostReputation(listed = false, status = "clean")
+                "ok" -> {
+                    val count = obj.optJSONArray("urls")?.length() ?: 0
+                    HostReputation(listed = true, status = "listed", detail = "$count malicious URL(s) on record")
+                }
+                else -> HostReputation(status = qs.ifBlank { null }, error = if (qs.isBlank()) "Unavailable" else null)
+            }
+        }
+    } catch (e: Exception) {
+        HostReputation(error = e.message?.take(80) ?: "Error")
+    }
+}
+
+// Typosquat / look-alike domain generation + registration check.
+private val SIMILAR_TLDS = listOf("com", "net", "org", "co", "io", "info", "app", "online", "site", "xyz", "shop", "store")
+
+private fun generateSimilarDomains(domain: String): List<String> {
+    val dot = domain.lastIndexOf('.')
+    if (dot <= 0) return emptyList()
+    val base = domain.substring(0, dot)
+    val tld  = domain.substring(dot + 1)
+    if (base.length < 2) return emptyList()
+    val out = LinkedHashSet<String>()
+    // Alternate TLDs
+    SIMILAR_TLDS.filter { it != tld }.forEach { out += "$base.$it" }
+    // Character omission
+    for (i in base.indices) out += base.removeRange(i, i + 1) + "." + tld
+    // Adjacent transposition
+    for (i in 0 until base.length - 1) {
+        val c = base.toCharArray(); val t = c[i]; c[i] = c[i + 1]; c[i + 1] = t
+        out += String(c) + "." + tld
+    }
+    // Character doubling
+    for (i in base.indices) out += base.substring(0, i + 1) + base[i] + base.substring(i + 1) + "." + tld
+    // Common homoglyph swaps
+    val homo = mapOf('o' to '0', 'l' to '1', 'i' to '1', 'e' to '3', 'a' to '4', 's' to '5')
+    for (i in base.indices) homo[base[i]]?.let { sub ->
+        out += base.substring(0, i) + sub + base.substring(i + 1) + "." + tld
+    }
+    return out.filter { it != domain && it.length in 4..60 }.take(30)
+}
+
+/** Generates look-alike domains and returns the ones that actually resolve (registered). */
+suspend fun fetchSimilarDomains(domain: String): List<SimilarDomain> = coroutineScope {
+    val candidates = generateSimilarDomains(domain)
+    candidates.map { cand ->
+        async(Dispatchers.IO) {
+            val registered = runCatching {
+                val enc = URLEncoder.encode(cand, "UTF-8")
+                val req = Request.Builder()
+                    .url("https://dns.google/resolve?name=$enc&type=1")
+                    .header("Accept", "application/dns-json")
+                    .build()
+                httpClient.newCall(req).execute().use { r ->
+                    val b = r.body?.string() ?: return@use false
+                    val o = JSONObject(b)
+                    o.optInt("Status") == 0 && (o.optJSONArray("Answer")?.length() ?: 0) > 0
+                }
+            }.getOrDefault(false)
+            SimilarDomain(cand, registered)
+        }
+    }.map { it.await() }.filter { it.registered }
 }
 
 suspend fun fetchAsn(ip: String): String? = withContext(Dispatchers.IO) {

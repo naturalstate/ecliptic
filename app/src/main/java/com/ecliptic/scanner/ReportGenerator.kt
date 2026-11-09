@@ -227,6 +227,41 @@ fun generateHtmlReport(
         }
     }
 
+    fun reputationHtml(): String {
+        val rep = recon?.reputation ?: return "<p class='muted'>Not checked</p>"
+        if (rep.error != null) return "<p class='muted'>Check unavailable (${esc(rep.source)})</p>"
+        return if (rep.listed)
+            "<p class='fail'>⚠ Listed on ${esc(rep.source)}${rep.detail?.let { " — ${esc(it)}" } ?: ""}</p>"
+        else
+            "<p class='pass'>✓ No malicious records on ${esc(rep.source)}</p>"
+    }
+
+    fun subdomainsHtml(): String {
+        val subs = recon?.subdomains ?: emptyList()
+        if (subs.isEmpty()) return "<p class='muted'>None found</p>"
+        return "<table>" + subs.joinToString("") { "<tr><td class='mono'>${esc(it)}</td></tr>" } + "</table>"
+    }
+
+    fun neighborsHtml(): String {
+        val r = recon ?: return "<p class='muted'>Not checked</p>"
+        val ip = r.dns?.aRecords?.firstOrNull() ?: return "<p class='muted'>No A record</p>"
+        val badge = when {
+            !r.ipChecked -> "<p class='muted'>Could not determine (reverse-IP lookup unavailable)</p>"
+            r.dedicatedIp -> "<p class='pass'>Dedicated IP — only this site detected on ${esc(ip)}</p>"
+            else -> "<p>Shared IP — ${r.ipNeighbors.size} sites on ${esc(ip)}</p>"
+        }
+        val list = if (r.ipNeighbors.isEmpty()) "" else
+            "<table>" + r.ipNeighbors.take(100).joinToString("") { "<tr><td class='mono'>${esc(it)}</td></tr>" } + "</table>"
+        return badge + list
+    }
+
+    fun similarDomainsHtml(): String {
+        val sims = recon?.similarDomains ?: emptyList()
+        if (sims.isEmpty()) return "<p class='muted'>No registered look-alikes found</p>"
+        return "<p class='muted'>Registered look-alike domains (possible typosquats):</p><table>" +
+            sims.joinToString("") { "<tr><td class='mono'>${esc(it.domain)}</td></tr>" } + "</table>"
+    }
+
     fun reconFileHtml(label: String, txt: String?): String {
         if (txt.isNullOrBlank()) return "<p class='muted'>$label not found</p>"
         return "<pre class='code'>${esc(txt.take(20_000))}</pre>"
@@ -311,6 +346,18 @@ ${whoisHtml()}
 
 <h2>DNS Records</h2>
 ${dnsHtml()}
+
+<h2>Host Reputation</h2>
+${reputationHtml()}
+
+<h2>Subdomains (${recon?.subdomains?.size ?: 0})</h2>
+${subdomainsHtml()}
+
+<h2>IP Neighbors</h2>
+${neighborsHtml()}
+
+<h2>Similar Domains</h2>
+${similarDomainsHtml()}
 
 <h2>TLS / Certificate</h2>
 ${tlsHtml()}

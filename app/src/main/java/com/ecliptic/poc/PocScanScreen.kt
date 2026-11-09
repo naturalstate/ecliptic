@@ -2412,6 +2412,93 @@ private fun ReconContent(
                 }
             }
         }
+        item { Spacer(Modifier.height(8.dp)) }
+
+        // ── Host reputation (URLhaus) ──────────────────────────────────────────
+        item { NetSectionHeader("REPUTATION", null, loading) }
+        item {
+            val rep = data?.reputation
+            when {
+                rep == null -> Text(if (loading) "Checking…" else "Not checked", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                rep.error != null -> Text("Check unavailable (${rep.source})", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                rep.listed -> Surface(color = Red.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("⚠  Listed on ${rep.source}" + (rep.detail?.let { " — $it" } ?: ""), modifier = Modifier.padding(12.dp), color = Red, fontSize = 12.sp)
+                }
+                else -> Surface(color = Teal.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("✓  No malicious records on ${rep.source}", modifier = Modifier.padding(12.dp), color = Teal, fontSize = 12.sp)
+                }
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+
+        // ── Subdomains (crt.sh) ────────────────────────────────────────────────
+        val subs = data?.subdomains ?: emptyList()
+        item { NetSectionHeader("SUBDOMAINS", subs.size.takeIf { it > 0 }, loading) }
+        if (subs.isEmpty()) {
+            item { Text(if (loading) "Enumerating…" else "None found", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+        } else {
+            items(subs) { sub ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri("https://$sub") } },
+                    color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
+                ) {
+                    Text(sub, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+
+        // ── IP neighbors (reverse-IP) ──────────────────────────────────────────
+        val neighbors = data?.ipNeighbors ?: emptyList()
+        item { NetSectionHeader("IP NEIGHBORS", neighbors.size.takeIf { it > 0 }, loading) }
+        if (data != null && data.dns?.aRecords?.isNotEmpty() == true) {
+            item {
+                val ipAddr = data.dns?.aRecords?.firstOrNull().orEmpty()
+                when {
+                    !data.ipChecked -> Text(
+                        if (loading) "Looking up neighbors…" else "Could not determine (reverse-IP lookup unavailable)",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp,
+                    )
+                    data.dedicatedIp -> Surface(color = Teal.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp)) {
+                        Text("Dedicated IP — only this site detected on $ipAddr", modifier = Modifier.padding(12.dp), color = Teal, fontSize = 12.sp)
+                    }
+                    else -> Surface(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp)) {
+                        Text("Shared IP — ${neighbors.size} sites on $ipAddr", modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+                    }
+                }
+            }
+        } else if (!loading) {
+            item { Text("No A record to check", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+        }
+        items(neighbors.take(60)) { n ->
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri("https://$n") } },
+                color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
+            ) {
+                Text(n, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+
+        // ── Similar / look-alike domains (registered typosquats) ───────────────
+        val sims = data?.similarDomains ?: emptyList()
+        item { NetSectionHeader("SIMILAR DOMAINS", sims.size.takeIf { it > 0 }, loading) }
+        if (sims.isEmpty()) {
+            item { Text(if (loading) "Checking look-alikes…" else "No registered look-alikes found", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+        } else {
+            item { Text("Registered look-alike domains (possible typosquats):", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+            items(sims) { s ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri("https://${s.domain}") } },
+                    color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(s.domain, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        Icon(Icons.Filled.OpenInBrowser, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
+        }
     }
 }
 
