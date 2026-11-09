@@ -370,6 +370,7 @@ fun PocScanScreen(
     var intelSubTab  by remember { mutableIntStateOf(0) }   // 0=HEADERS … 6=REQ/RES
     var codeSubTab   by remember { mutableIntStateOf(0) }   // 0=SOURCE 1=JS 2=DOM 3=NET 4=CONSOLE
     var showSettings by remember { mutableStateOf(false) }
+    var showShareSheet by remember { mutableStateOf(false) }
     var selectedTech by remember { mutableStateOf<Technology?>(null) }
     var isFullScreen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -409,9 +410,9 @@ fun PocScanScreen(
         clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.let { viewModel.onUrlChanged(it) }
     }
 
-    fun exportReport() {
+    fun exportReport(includeFullHtml: Boolean = false, includeDomTree: Boolean = false) {
         val sig = signals ?: return
-        val html = generateHtmlReport(sig, techs, BuildConfig.VERSION_NAME)
+        val html = generateHtmlReport(sig, techs, BuildConfig.VERSION_NAME, includeFullHtml, includeDomTree)
         try {
             val dir = java.io.File(context.cacheDir, "reports").also { it.mkdirs() }
             val file = java.io.File(dir, "ecliptic_report_${System.currentTimeMillis()}.html")
@@ -544,7 +545,7 @@ fun PocScanScreen(
                         }
                     }
                     if (hasScanned && !scanning) {
-                        IconButton(onClick = { exportReport() }, modifier = Modifier.size(40.dp)) {
+                        IconButton(onClick = { showShareSheet = true }, modifier = Modifier.size(40.dp)) {
                             Icon(Icons.Filled.Share, "Export report", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
                         IconButton(onClick = { viewModel.onNewScan(); bottomTab = TAB_TECH }, modifier = Modifier.size(40.dp)) {
@@ -775,6 +776,56 @@ fun PocScanScreen(
             modifier = Modifier.fillMaxHeight(),
         ) {
             SettingsSheet(isDarkTheme = isDarkTheme, onToggleTheme = onToggleTheme)
+        }
+    }
+
+    if (showShareSheet) {
+        var incHtml by remember { mutableStateOf(false) }
+        var incDom by remember { mutableStateOf(false) }
+        ModalBottomSheet(
+            onDismissRequest = { showShareSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 40.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text("Export report", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                Text(
+                    "A full, white-themed HTML report of this scan. Open it in Chrome to read, print, or save as PDF.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 18.sp,
+                )
+                @Composable
+                fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, color = MaterialTheme.colorScheme.onBackground, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = checked, onCheckedChange = onChange,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Navy, checkedTrackColor = Teal,
+                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                uncheckedTrackColor = MaterialTheme.colorScheme.outline,
+                            ),
+                        )
+                    }
+                }
+                ToggleRow("Include full HTML source", incHtml) { incHtml = it }
+                ToggleRow("Include DOM tree", incDom) { incDom = it }
+                Text(
+                    "Technologies, APIs, headers, cookies, TLS, network, parameters, strings and social links are always included.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp,
+                )
+                Button(
+                    onClick = { showShareSheet = false; exportReport(incHtml, incDom) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Teal, contentColor = Navy),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Icon(Icons.Filled.Share, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Generate & Share", fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 
