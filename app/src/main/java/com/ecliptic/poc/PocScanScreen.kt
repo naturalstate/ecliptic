@@ -480,27 +480,51 @@ fun PocScanScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .graphicsLayer(rotationZ = 45f)
-                            .background(Teal, RoundedCornerShape(1.5.dp))
-                    )
-                    Text(
-                        text = "ECLIPTIC",
-                        style = TextStyle(
-                            fontFamily = SpaceGrotesk,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp,
-                            letterSpacing = 0.18.em,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        ),
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .graphicsLayer(rotationZ = 45f)
+                                .background(Teal, RoundedCornerShape(1.5.dp))
+                        )
+                        Text(
+                            text = "ECLIPTIC",
+                            style = TextStyle(
+                                fontFamily = SpaceGrotesk,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp,
+                                letterSpacing = 0.18.em,
+                                color = MaterialTheme.colorScheme.onBackground,
+                            ),
+                        )
+                    }
+                    // Pinned project host — always visible so you know which scan
+                    // you're viewing, even on Intel/Code/Repeat while arrowing history.
+                    if (hasScanned) {
+                        val projectHost = remember(signals?.finalUrl, urlInput) {
+                            val raw = signals?.finalUrl?.takeIf { it.isNotBlank() } ?: urlInput
+                            runCatching {
+                                val withScheme = if (raw.startsWith("http")) raw else "https://$raw"
+                                java.net.URI(withScheme).host.orEmpty()
+                            }.getOrDefault("")
+                        }
+                        if (projectHost.isNotBlank()) {
+                            Text(
+                                text = projectHost,
+                                color = Teal,
+                                fontSize = 11.sp,
+                                fontFamily = SpaceGrotesk,
+                                letterSpacing = 0.02.em,
+                                maxLines = 1,
+                                modifier = Modifier.padding(start = 14.dp),
+                            )
+                        }
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (historySize > 1) {
-                        IconButton(onClick = { viewModel.navigateHistory(-1); bottomTab = TAB_TECH }, enabled = historyPosition > 1, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { viewModel.navigateHistory(-1) }, enabled = historyPosition > 1, modifier = Modifier.size(36.dp)) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous scan", tint = if (historyPosition > 1) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), modifier = Modifier.size(20.dp))
                         }
                         Text(
@@ -509,7 +533,7 @@ fun PocScanScreen(
                             fontSize = 12.sp,
                             fontFamily = SpaceGrotesk,
                         )
-                        IconButton(onClick = { viewModel.navigateHistory(1); bottomTab = TAB_TECH }, enabled = historyPosition < historySize, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { viewModel.navigateHistory(1) }, enabled = historyPosition < historySize, modifier = Modifier.size(36.dp)) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next scan", tint = if (historyPosition < historySize) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), modifier = Modifier.size(20.dp))
                         }
                     }
@@ -530,22 +554,25 @@ fun PocScanScreen(
 
         // ── URL input (Tech tab only, hidden in fullscreen) ───────────────────
         if (!isFullScreen && (bottomTab == TAB_TECH || !hasScanned)) {
+            // Finalized = a completed scan whose URL hasn't been edited since; used to
+            // tint the input so the user sees the URL has been processed.
+            val finalized = hasScanned && !scanning && urlInput.isNotBlank()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(
                         start = 16.dp, end = 16.dp,
-                        top = if (isLandscape) 6.dp else 0.dp,
+                        top = if (isLandscape) 6.dp else 8.dp,
                         bottom = if (isLandscape) 4.dp else 0.dp,
                     ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.Bottom,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedTextField(
                     value = urlInput,
                     onValueChange = { viewModel.onUrlChanged(it) },
-                    modifier = Modifier.weight(1f),
-                    label = { Text("URL", fontFamily = SpaceGrotesk) },
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    placeholder = { Text("example.com", fontFamily = SpaceGrotesk, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     singleLine = true,
                     enabled = !scanning,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
@@ -564,13 +591,11 @@ fun PocScanScreen(
                     },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = MaterialTheme.colorScheme.onBackground,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
+                        unfocusedTextColor = if (finalized) Teal else MaterialTheme.colorScheme.onBackground,
                         focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = if (finalized) Teal.copy(alpha = 0.07f) else MaterialTheme.colorScheme.surface,
                         focusedBorderColor = Teal,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                        focusedLabelColor = Teal,
-                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unfocusedBorderColor = if (finalized) Teal.copy(alpha = 0.7f) else MaterialTheme.colorScheme.outline,
                         cursorColor = Teal,
                         disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         disabledContainerColor = MaterialTheme.colorScheme.surface,
@@ -588,7 +613,8 @@ fun PocScanScreen(
                         disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                     shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.height(56.dp).padding(bottom = 1.dp),
+                    contentPadding = PaddingValues(horizontal = 18.dp),
+                    modifier = Modifier.height(50.dp),
                 ) {
                     if (scanning) {
                         CircularProgressIndicator(modifier = Modifier.size(17.dp), color = Navy, strokeWidth = 2.dp)
@@ -3814,7 +3840,7 @@ private fun RepeaterContent(
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("METHOD", color = Teal, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.1.em)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(listOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")) { m ->
+                                items(listOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "QUERY")) { m ->
                                     val sel = wizardMethod == m
                                     Surface(
                                         onClick = { onWizardMethodChanged(m) },
@@ -4396,24 +4422,31 @@ private fun AboutTabContent() {
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp,
         )
         Spacer(Modifier.height(10.dp))
-        val uriHandler = LocalUriHandler.current
-        Surface(
-            modifier = Modifier.fillMaxWidth().clickable {
-                runCatching { uriHandler.openUri("https://ryand202.sg-host.com/ecliptic/privacy.html") }
-            },
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(10.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(Icons.Filled.OpenInBrowser, null, tint = Teal, modifier = Modifier.size(16.dp))
-                Text("Privacy Policy", color = MaterialTheme.colorScheme.onBackground, fontSize = 13.sp, modifier = Modifier.weight(1f))
-            }
-        }
+        AboutLinkRow("Privacy Policy", "https://naturalstate.github.io/ecliptic/privacy.html")
         Spacer(Modifier.height(8.dp))
+        AboutLinkRow("Website", "https://naturalstate.github.io/ecliptic/")
+        Spacer(Modifier.height(8.dp))
+        AboutLinkRow("GitHub", "https://github.com/naturalstate/ecliptic")
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun AboutLinkRow(label: String, url: String) {
+    val uriHandler = LocalUriHandler.current
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri(url) } },
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Filled.OpenInBrowser, null, tint = Teal, modifier = Modifier.size(16.dp))
+            Text(label, color = MaterialTheme.colorScheme.onBackground, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        }
     }
 }
 
