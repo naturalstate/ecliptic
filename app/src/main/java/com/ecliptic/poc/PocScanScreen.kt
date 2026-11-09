@@ -40,7 +40,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -1894,6 +1896,82 @@ private fun UrlActionRow(
     }
 }
 
+/**
+ * Modal viewer for a remote file (JS/CSS/HTML/etc). Fetches the content, shows the
+ * full filename + URL with open-in-browser / copy actions, and supports pinch-zoom.
+ * Reused from Net, Source and Spider.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FileViewerSheet(url: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val sheetState = rememberModalBottomSheetState()
+    var content by remember(url) { mutableStateOf<String?>(null) }
+    var zoom by remember { mutableStateOf(1f) }
+    LaunchedEffect(url) { content = fetchTextContent(url) }
+    val fname = remember(url) { url.substringAfterLast('/').substringBefore('?').ifBlank { url } }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxHeight(),
+    ) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    fname, color = Teal, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace, maxLines = 2, modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = { runCatching { uriHandler.openUri(url) } }, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Filled.OpenInBrowser, "Open in browser", tint = Teal, modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("url", url))
+                    Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                }, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Filled.ContentCopy, "Copy URL", tint = Teal, modifier = Modifier.size(18.dp))
+                }
+            }
+            Text(url, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 6.dp))
+            val c = content
+            when {
+                c == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator(color = Teal) }
+                c.isBlank() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    Text("Empty or failed to load", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                }
+                else -> {
+                    val lines = remember(c) { c.lines() }
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+                            detectTransformGestures { _, _, z, _ -> zoom = (zoom * z).coerceIn(0.6f, 3f) }
+                        },
+                        contentPadding = PaddingValues(bottom = 40.dp),
+                    ) {
+                        itemsIndexed(lines) { i, line ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.Top) {
+                                Text(
+                                    "${i + 1}", modifier = Modifier.width(40.dp).padding(end = 8.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                    fontSize = (10 * zoom).sp, fontFamily = FontFamily.Monospace, textAlign = TextAlign.End,
+                                )
+                                Text(
+                                    line, modifier = Modifier.weight(1f).padding(end = 12.dp),
+                                    fontFamily = FontFamily.Monospace, fontSize = (11 * zoom).sp,
+                                    lineHeight = (16 * zoom).sp, color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SpiderButton(label: String, icon: ImageVector, danger: Boolean = false, onClick: () -> Unit) {
     val color = if (danger) MaterialTheme.colorScheme.error else Teal
@@ -2475,9 +2553,11 @@ private fun SourceContent(
     var remoteLoading by remember { mutableStateOf(setOf<String>()) }
     var searchQuery by remember { mutableStateOf("") }
     var currentMatchIdx by remember { mutableIntStateOf(0) }
+    var codeZoom by remember { mutableStateOf(1f) }
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val listState = rememberLazyListState()
 
     val isHtml = selectedFile == "__html__"
@@ -2656,6 +2736,31 @@ private fun SourceContent(
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
+        // Full filename + actions for remote files (chips above are truncated)
+        if (!isHtml) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        selectedFile.substringAfterLast('/').substringBefore('?').ifBlank { selectedFile },
+                        color = Teal, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                        maxLines = 1, modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { runCatching { uriHandler.openUri(selectedFile) } }, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Filled.OpenInBrowser, "Open in browser", tint = Teal, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = {
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("url", selectedFile))
+                        Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                    }, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Filled.ContentCopy, "Copy URL", tint = Teal, modifier = Modifier.size(16.dp))
+                    }
+                }
+                Text(selectedFile, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+        }
+
         // Content area
         when {
             !isHtml && selectedFile in remoteLoading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -2671,7 +2776,10 @@ private fun SourceContent(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)),
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.4f))
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, _, z, _ -> codeZoom = (codeZoom * z).coerceIn(0.6f, 3f) }
+                    },
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
                 itemsIndexed(lines) { index, line ->
@@ -2685,7 +2793,7 @@ private fun SourceContent(
                             modifier = Modifier.width(40.dp).padding(end = 8.dp),
                             color = if (isCurrentMatch) Teal
                                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-                            fontSize = 10.sp,
+                            fontSize = (10 * codeZoom).sp,
                             fontFamily = FontFamily.Monospace,
                             textAlign = TextAlign.End,
                         )
@@ -2700,8 +2808,8 @@ private fun SourceContent(
                             },
                             modifier = Modifier.weight(1f).padding(end = 16.dp),
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
+                            fontSize = (11 * codeZoom).sp,
+                            lineHeight = (16 * codeZoom).sp,
                         )
                     }
                 }
@@ -3173,10 +3281,13 @@ private fun DomContent(domTreeJson: String, isFullScreen: Boolean = false, onTog
         buildSet { add(root.nodeId); root.children.forEach { add(it.nodeId) } }
     }
     var expandedIds by remember(root) { mutableStateOf(defaultExpanded) }
+    var domZoom by remember { mutableStateOf(1f) }
     val items = remember(expandedIds) { flattenDom(root, expandedIds) }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+            detectTransformGestures { _, _, z, _ -> domZoom = (domZoom * z).coerceIn(0.6f, 3f) }
+        },
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
     ) {
         item {
@@ -3231,12 +3342,12 @@ private fun DomContent(domTreeJson: String, isFullScreen: Boolean = false, onTog
                             Text(if (expanded) "▾" else "▸", color = Teal, fontSize = 10.sp)
                         }
                     }
-                    Text("<${item.tag}>", color = SH_TAG, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
+                    Text("<${item.tag}>", color = SH_TAG, fontSize = (11 * domZoom).sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
                     if (item.attrSummary.isNotBlank()) {
                         Text(
                             text = " ${item.attrSummary}",
                             color = SH_ATTR_NAME,
-                            fontSize = 11.sp,
+                            fontSize = (11 * domZoom).sp,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.weight(1f),
                             maxLines = 1,
@@ -3273,6 +3384,7 @@ private fun NetContent(
     }
     var selectedType by remember { mutableStateOf("ALL") }
     var query by remember { mutableStateOf("") }
+    var viewerUrl by remember { mutableStateOf<String?>(null) }
 
     val filtered = remember(all, selectedType, query) {
         all.filter {
@@ -3355,19 +3467,21 @@ private fun NetContent(
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
             ) {
                 itemsIndexed(filtered) { _, req ->
-                    NetRequestRow(req)
+                    NetRequestRow(req) { viewerUrl = req.url }
                 }
             }
         }
     }
+    viewerUrl?.let { FileViewerSheet(it) { viewerUrl = null } }
 }
 
 @Composable
-private fun NetRequestRow(req: NetworkRequest) {
+private fun NetRequestRow(req: NetworkRequest, onOpen: () -> Unit) {
     val typeColor = NET_TYPE_COLOR[req.type] ?: Color(0xFF607D8B)
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onOpen() }
             .padding(vertical = 3.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
