@@ -169,6 +169,7 @@ import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RdapResult
 import com.ecliptic.scanner.ReconFiles
+import com.ecliptic.scanner.Extractor
 import com.ecliptic.scanner.RepeaterResponse
 import com.ecliptic.scanner.SpiderStatus
 import com.ecliptic.scanner.WebViewClients
@@ -633,8 +634,8 @@ fun PocScanScreen(
         // ── Sub-tab chips (INTEL / CODE only, hidden in fullscreen) ──────────
         if (!isFullScreen && hasScanned && !scanning && (bottomTab == TAB_INTEL || bottomTab == TAB_CODE)) {
             val subLabels = if (bottomTab == TAB_INTEL)
-                listOf("HEADERS", "SECURITY", "COOKIES", "APIS", "RECON", "SPIDER", "NETWORK", "REQ/RES")
-            else listOf("SOURCE", "JS", "DOM", "NET", "CONSOLE")
+                listOf("HEADERS", "SECURITY", "COOKIES", "APIS", "RECON", "PARAM", "SPIDER", "NETWORK", "REQ/RES")
+            else listOf("SOURCE", "STRINGS", "JS", "DOM", "NET", "CONSOLE")
             val currentSub = if (bottomTab == TAB_INTEL) intelSubTab else codeSubTab
             LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -718,14 +719,16 @@ fun PocScanScreen(
                     "intel_2" -> CookiesContent(richCookies = signals?.richCookies ?: emptyList(), cookies = signals?.cookies ?: emptyMap())
                     "intel_3" -> SelectionContainer { ApisContent(apis = signals?.detectedApis ?: emptyList()) }
                     "intel_4" -> ReconContent(url = signals?.finalUrl ?: urlInput)
-                    "intel_5" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput, onSendToRepeater = { viewModel.prefillRepeater(it); bottomTab = TAB_REPEAT })
-                    "intel_6" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls) }
-                    "intel_7" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
+                    "intel_5" -> SelectionContainer { ParamContent(html = signals?.htmlSource ?: "") }
+                    "intel_6" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput, onSendToRepeater = { viewModel.prefillRepeater(it); bottomTab = TAB_REPEAT })
+                    "intel_7" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls) }
+                    "intel_8" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_1"  -> SelectionContainer { JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap()) }
-                    "code_2"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_3"  -> SelectionContainer { NetContent(scanRequests = signals?.networkRequests ?: emptyList(), liveRequests = liveNetworkRequests) }
-                    "code_4"  -> ConsoleContent(messages = consoleMessages, evalJs = { cmd, cb -> webView.evaluateJavascript(cmd, cb) })
+                    "code_1"  -> SelectionContainer { StringsContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList()) }
+                    "code_2"  -> SelectionContainer { JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap()) }
+                    "code_3"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
+                    "code_4"  -> SelectionContainer { NetContent(scanRequests = signals?.networkRequests ?: emptyList(), liveRequests = liveNetworkRequests) }
+                    "code_5"  -> ConsoleContent(messages = consoleMessages, evalJs = { cmd, cb -> webView.evaluateJavascript(cmd, cb) })
                     else      -> Box(modifier = Modifier.fillMaxSize())
                 }
             }
@@ -1988,6 +1991,138 @@ private fun SpiderButton(label: String, icon: ImageVector, danger: Boolean = fal
         ) {
             Icon(icon, label, modifier = Modifier.size(15.dp), tint = color)
             Text(label, color = color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+// ─── Param tab (Intel) ────────────────────────────────────────────────────────
+
+@Composable
+private fun ParamContent(html: String) {
+    val params = remember(html) { Extractor.findParams(html) }
+    if (params.isEmpty()) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) {
+            Text("No parameters found in source", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+        }
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${params.size} parameter${if (params.size == 1) "" else "s"} from URLs & forms",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.weight(1f),
+                )
+                TabCopyButton { params.joinToString("\n") { if (it.second.isBlank()) it.first else "${it.first}=${it.second}" } }
+            }
+        }
+        items(params) { (name, value) ->
+            Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(name, color = Teal, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                    if (value.isNotBlank()) {
+                        Text("= $value", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Strings tab (Code) ───────────────────────────────────────────────────────
+
+@Composable
+private fun StringsContent(html: String, scriptUrls: List<String>) {
+    val scope = rememberCoroutineScope()
+    var deepScanned by remember(html) { mutableStateOf(false) }
+    var deepLoading by remember { mutableStateOf(false) }
+    var extraText by remember(html) { mutableStateOf("") }
+
+    val findings = remember(html, extraText) {
+        (Extractor.findStrings(html) +
+            if (extraText.isNotBlank()) Extractor.findStrings(extraText) else emptyList()).distinct()
+    }
+    val grouped = findings.groupBy { it.category }.toList()
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                "${findings.size} found" + if (deepScanned) " · incl. JS" else " · HTML only",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.weight(1f),
+            )
+            if (scriptUrls.isNotEmpty() && !deepScanned) {
+                Surface(
+                    onClick = {
+                        deepLoading = true
+                        scope.launch {
+                            val sb = StringBuilder()
+                            scriptUrls.take(8).forEach { sb.append(fetchTextContent(it)).append('\n') }
+                            extraText = sb.toString()
+                            deepScanned = true
+                            deepLoading = false
+                        }
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    color = Teal.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, Teal),
+                    enabled = !deepLoading,
+                ) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (deepLoading) CircularProgressIndicator(Modifier.size(14.dp), color = Teal, strokeWidth = 2.dp)
+                        else Icon(Icons.Filled.Search, null, tint = Teal, modifier = Modifier.size(14.dp))
+                        Text(if (deepLoading) "Scanning JS…" else "Deep scan JS", color = Teal, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+            TabCopyButton { findings.joinToString("\n") { "[${it.category}] ${it.value}" } }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+        if (findings.isEmpty()) {
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                Text(
+                    if (scriptUrls.isNotEmpty() && !deepScanned) "Nothing in the main HTML.\nTap \"Deep scan JS\" to check script files."
+                    else "No interesting strings found.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 19.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                grouped.forEach { (cat, items) ->
+                    item(key = "sh_$cat") {
+                        val accent = when (items.first().severity) {
+                            "alert" -> MaterialTheme.colorScheme.error
+                            "warn" -> Color(0xFFF59E0B)
+                            else -> Teal
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(cat, color = accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("${items.size}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                        }
+                    }
+                    items(items) { f ->
+                        Text(
+                            f.value,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }
