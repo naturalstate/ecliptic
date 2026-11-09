@@ -12,6 +12,7 @@ fun generateHtmlReport(
     appVersion: String,
     includeFullHtml: Boolean = false,
     includeDomTree: Boolean = false,
+    darkMode: Boolean = false,
 ): String {
     val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
     val grouped = techs.groupBy { it.categories.firstOrNull() ?: "Other" }
@@ -53,11 +54,11 @@ fun generateHtmlReport(
     }
 
     fun headersHtml(): String = buildString {
-        append("<table><tr><th>Header</th><th>Status</th><th>Value</th></tr>")
+        append("<table><tr><th>Header</th><th>Value</th><th>Status</th></tr>")
         for ((key, label) in securityHeaders) {
             val value = signals.headers[key]
             val (status, cls) = if (value != null) ("Present" to "pass") else ("Missing" to "fail")
-            append("<tr><td>${esc(label)}</td><td class='$cls'>$status</td><td class='mono'>${esc(value?.take(160))}</td></tr>")
+            append("<tr><td>${esc(label)}</td><td class='mono'>${esc(value?.take(160))}</td><td class='$cls'>$status</td></tr>")
         }
         append("</table>")
     }
@@ -188,6 +189,14 @@ fun generateHtmlReport(
 
     val statusCode = signals.headers["_status"] ?: "—"
 
+    val bg      = if (darkMode) "#0a0a0a" else "#ffffff"
+    val fg      = if (darkMode) "#e8e8e8" else "#1a1a1a"
+    val mut     = if (darkMode) "#8a8a8a" else "#999999"
+    val bord    = if (darkMode) "#232323" else "#e5e5e5"
+    val rowBord = if (darkMode) "#161616" else "#f0f0f0"
+    val accent  = if (darkMode) "#00e5c8" else "#0a7f70"
+    val codeBg  = if (darkMode) "#111318" else "#f6f8fa"
+
     val optionalSections = buildString {
         if (includeFullHtml && signals.htmlSource.isNotBlank()) {
             append("<h2>Full HTML Source</h2><pre class='code'>${esc(signals.htmlSource.take(400_000))}</pre>")
@@ -205,25 +214,26 @@ fun generateHtmlReport(
 <title>Ecliptic Report — ${esc(signals.finalUrl)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#ffffff;color:#1a1a1a;padding:28px;font-size:14px;line-height:1.5;max-width:900px;margin:0 auto}
-.header{border-bottom:3px solid #0a7f70;padding-bottom:16px;margin-bottom:28px}
-.brand{color:#0a7f70;font-size:30px;font-weight:800;letter-spacing:.12em}
-.url{color:#333;font-size:13px;margin-top:6px;word-break:break-all;font-family:'Courier New',monospace}
-.meta{color:#888;font-size:12px;margin-top:8px}
-h2{color:#0a7f70;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:30px 0 10px;padding-bottom:5px;border-bottom:1px solid #e5e5e5}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:$bg;color:$fg;padding:28px;font-size:14px;line-height:1.5;max-width:900px;margin:0 auto}
+.header{border-bottom:3px solid $accent;padding-bottom:16px;margin-bottom:28px}
+.brand{color:$accent;font-size:30px;font-weight:800;letter-spacing:.12em}
+.url{color:$fg;font-size:13px;margin-top:6px;word-break:break-all;font-family:'Courier New',monospace}
+.meta{color:$mut;font-size:12px;margin-top:8px}
+h2{color:$accent;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:30px 0 10px;padding-bottom:5px;border-bottom:1px solid $bord}
+.appendix{margin-top:44px;border-top:2px dashed $bord;padding-top:6px}
 table{width:100%;border-collapse:collapse;margin-bottom:10px}
-th{text-align:left;color:#888;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:6px 8px;border-bottom:1px solid #e5e5e5}
-td{padding:6px 8px;border-bottom:1px solid #f0f0f0;vertical-align:top;word-break:break-word}
+th{text-align:left;color:$mut;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:6px 8px;border-bottom:1px solid $bord}
+td{padding:6px 8px;border-bottom:1px solid $rowBord;vertical-align:top;word-break:break-word}
 .ico{width:15px;height:15px;vertical-align:-2px;margin-right:7px}
-.mono{font-family:'Courier New',monospace;font-size:12px;color:#444}
-.muted{color:#999}
+.mono{font-family:'Courier New',monospace;font-size:12px;color:$fg}
+.muted{color:$mut}
 .pass{color:#1a9d4e;font-weight:600}
-.fail{color:#d23;font-weight:600}
-.warn{color:#c47d00;font-weight:600}
-.ver{color:#0a7f70;font-size:12px;font-weight:600}
-.badge{background:#eee;color:#777;font-size:11px;padding:1px 5px;border-radius:4px}
-.section-label{color:#666;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin:14px 0 4px}
-.code{background:#f6f8fa;border:1px solid #e5e5e5;border-radius:6px;padding:12px;font-family:'Courier New',monospace;font-size:11px;white-space:pre-wrap;word-break:break-all;overflow-x:auto;color:#333}
+.fail{color:#e5484d;font-weight:600}
+.warn{color:#d9920a;font-weight:600}
+.ver{color:$accent;font-size:12px;font-weight:600}
+.badge{background:$codeBg;color:$mut;font-size:11px;padding:1px 5px;border-radius:4px}
+.section-label{color:$mut;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin:14px 0 4px}
+.code{background:$codeBg;border:1px solid $bord;border-radius:6px;padding:12px;font-family:'Courier New',monospace;font-size:11px;white-space:pre-wrap;word-break:break-all;overflow-x:auto;color:$fg}
 </style>
 </head>
 <body>
@@ -257,6 +267,7 @@ ${tlsHtml()}
 <h2>Cookies (${signals.richCookies.size})</h2>
 ${cookiesHtml()}
 
+<div class="appendix">
 <h2>Network Requests (${signals.networkRequests.size})</h2>
 ${networkHtml()}
 
@@ -270,6 +281,7 @@ ${sourceFilesHtml()}
 <table>${signals.requestHeaders.entries.sortedBy { it.key }.joinToString("") { "<tr><td class='mono'>${esc(it.key)}</td><td class='mono'>${esc(it.value.take(220))}</td></tr>" }}</table>
 
 $optionalSections
+</div>
 
 </body>
 </html>"""

@@ -67,7 +67,19 @@ private fun ScanSnapshot.toJson(saveHtmlSource: Boolean): JSONObject {
         put("wizardHeaders", JSONArray().also { arr ->
             wizardHeaders.forEach { (k, v) -> arr.put(JSONArray().put(k).put(v)) }
         })
-        if (saveHtmlSource) put("htmlSource", sig.htmlSource)
+        // Small fields — always retained so a revisited scan keeps JS globals,
+        // source file lists and meta even after an app restart.
+        put("globals", JSONObject().also { o -> sig.globals.forEach { (k, v) -> o.put(k, v?.toString() ?: "true") } })
+        put("jsProbe", sig.jsProbe.toJsonObject())
+        put("metaTags", sig.metaTags.toJsonObject())
+        put("scriptUrls", JSONArray(sig.scriptUrls))
+        put("cssUrls", JSONArray(sig.cssUrls))
+        put("cssProps", JSONArray(sig.cssProps))
+        // Large fields (HTML source + DOM tree) — gated by the save-source setting.
+        if (saveHtmlSource) {
+            put("htmlSource", sig.htmlSource)
+            put("domTree", sig.domTree)
+        }
     }
 }
 
@@ -81,6 +93,13 @@ private fun JSONObject.toScanSnapshot(): ScanSnapshot {
     val rawRequest  = optString("rawRequest", "")
     val wizardUrl   = optString("wizardUrl", url)
     val htmlSource  = optString("htmlSource", "")
+    val domTree     = optString("domTree", "")
+    val globals     = optJSONObject("globals")?.toStringMap() ?: emptyMap()
+    val jsProbe     = optJSONObject("jsProbe")?.toStringMap() ?: emptyMap()
+    val metaTags    = optJSONObject("metaTags")?.toStringMap() ?: emptyMap()
+    val scriptUrls  = optJSONArray("scriptUrls")?.toStringList() ?: emptyList()
+    val cssUrls     = optJSONArray("cssUrls")?.toStringList() ?: emptyList()
+    val cssProps    = optJSONArray("cssProps")?.toStringList() ?: emptyList()
 
     val techs = getJSONArray("techs").mapObjects { it.toTechnology() }
     val requestHeaders  = optJSONObject("requestHeaders")?.toStringMap() ?: emptyMap()
@@ -100,16 +119,19 @@ private fun JSONObject.toScanSnapshot(): ScanSnapshot {
         url = url, finalUrl = url,
         requestHeaders = requestHeaders,
         headers = responseHeaders,
-        globals = emptyMap(),
-        metaTags = emptyMap(),
-        scriptUrls = emptyList(),
-        cssUrls = emptyList(),
+        globals = globals,
+        jsProbe = jsProbe,
+        metaTags = metaTags,
+        scriptUrls = scriptUrls,
+        cssUrls = cssUrls,
         bodyClasses = emptyList(),
         htmlAttrs = emptyMap(),
         htmlSource = htmlSource,
         title = title,
         richCookies = richCookies,
         detectedApis = apis,
+        cssProps = cssProps,
+        domTree = domTree,
         tls = tls,
         networkRequests = networkRequests,
         error = error,
@@ -231,6 +253,8 @@ private fun Map<String, String>.toJsonObject() = JSONObject().also { obj -> forE
 private fun JSONObject.toStringMap(): Map<String, String> = buildMap {
     keys().forEach { put(it, optString(it, "")) }
 }
+
+private fun JSONArray.toStringList(): List<String> = (0 until length()).map { optString(it, "") }
 
 private fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> =
     (0 until length()).map { transform(getJSONObject(it)) }

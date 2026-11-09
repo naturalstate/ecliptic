@@ -410,9 +410,9 @@ fun PocScanScreen(
         clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.let { viewModel.onUrlChanged(it) }
     }
 
-    fun exportReport(includeFullHtml: Boolean = false, includeDomTree: Boolean = false) {
+    fun exportReport(includeFullHtml: Boolean = false, includeDomTree: Boolean = false, darkReport: Boolean = false) {
         val sig = signals ?: return
-        val html = generateHtmlReport(sig, techs, BuildConfig.VERSION_NAME, includeFullHtml, includeDomTree)
+        val html = generateHtmlReport(sig, techs, BuildConfig.VERSION_NAME, includeFullHtml, includeDomTree, darkReport)
         try {
             val dir = java.io.File(context.cacheDir, "reports").also { it.mkdirs() }
             val file = java.io.File(dir, "ecliptic_report_${System.currentTimeMillis()}.html")
@@ -782,6 +782,7 @@ fun PocScanScreen(
     if (showShareSheet) {
         var incHtml by remember { mutableStateOf(false) }
         var incDom by remember { mutableStateOf(false) }
+        var incDark by remember { mutableStateOf(false) }
         ModalBottomSheet(
             onDismissRequest = { showShareSheet = false },
             containerColor = MaterialTheme.colorScheme.surface,
@@ -809,6 +810,7 @@ fun PocScanScreen(
                         )
                     }
                 }
+                ToggleRow("Dark mode report", incDark) { incDark = it }
                 ToggleRow("Include full HTML source", incHtml) { incHtml = it }
                 ToggleRow("Include DOM tree", incDom) { incDom = it }
                 Text(
@@ -816,7 +818,7 @@ fun PocScanScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp,
                 )
                 Button(
-                    onClick = { showShareSheet = false; exportReport(incHtml, incDom) },
+                    onClick = { showShareSheet = false; exportReport(incHtml, incDom, incDark) },
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Teal, contentColor = Navy),
                     shape = RoundedCornerShape(10.dp),
