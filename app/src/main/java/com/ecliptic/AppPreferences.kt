@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -15,6 +16,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 const val DEFAULT_SCAN_TIMEOUT_S = 20
 const val DEFAULT_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+const val DEFAULT_FONT_SCALE = 1.0f
 
 object AppPreferences {
     private val DARK_THEME       = booleanPreferencesKey("dark_theme")
@@ -24,6 +26,7 @@ object AppPreferences {
     private val SCAN_TIMEOUT_S   = intPreferencesKey("scan_timeout_s")
     private val SCAN_COUNT       = intPreferencesKey("scan_count")
     private val SAVE_HTML_SOURCE = booleanPreferencesKey("save_html_source")
+    private val FONT_SCALE        = floatPreferencesKey("font_scale")
 
     fun darkThemeFlow(context: Context): Flow<Boolean> =
         context.dataStore.data.map { it[DARK_THEME] ?: true }
@@ -48,6 +51,13 @@ object AppPreferences {
 
     suspend fun setSaveHtmlSource(context: Context, save: Boolean) {
         context.dataStore.edit { it[SAVE_HTML_SOURCE] = save }
+    }
+
+    fun fontScaleFlow(context: Context): Flow<Float> =
+        context.dataStore.data.map { it[FONT_SCALE] ?: DEFAULT_FONT_SCALE }
+
+    suspend fun setFontScale(context: Context, scale: Float) {
+        context.dataStore.edit { it[FONT_SCALE] = scale }
     }
 
     suspend fun setDarkTheme(context: Context, dark: Boolean) {

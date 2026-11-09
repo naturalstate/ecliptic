@@ -362,6 +362,22 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Prefill the Repeater (wizard mode) with a URL — e.g. from a Spider result. */
+    fun prefillRepeater(url: String) {
+        val full = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
+        _state.update {
+            it.copy(
+                isRepeaterWizard = true,
+                wizardUrl = full,
+                wizardMethod = "GET",
+                wizardHeaders = emptyList(),
+                wizardBody = "",
+                wizardSent = false,
+                repeaterResponse = null,
+            )
+        }
+    }
+
     fun onRepeaterReset() {
         _state.update {
             it.copy(

@@ -7,10 +7,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -41,16 +44,26 @@ class MainActivity : ComponentActivity() {
                 window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(bgColor))
             }
 
+            val fontScale by AppPreferences.fontScaleFlow(applicationContext)
+                .collectAsStateWithLifecycle(initialValue = DEFAULT_FONT_SCALE)
+
             EclipticTheme(darkTheme = darkTheme) {
-                PocScanScreen(
-                    initialUrl = sharedUrl,
-                    isDarkTheme = darkTheme,
-                    onToggleTheme = {
-                        lifecycleScope.launch {
-                            AppPreferences.setDarkTheme(applicationContext, !darkTheme)
-                        }
-                    },
-                )
+                // Apply the user's app-wide font-size preference on top of the system
+                // scale, so every sp-sized text responds.
+                val base = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density = base.density, fontScale = base.fontScale * fontScale)
+                ) {
+                    PocScanScreen(
+                        initialUrl = sharedUrl,
+                        isDarkTheme = darkTheme,
+                        onToggleTheme = {
+                            lifecycleScope.launch {
+                                AppPreferences.setDarkTheme(applicationContext, !darkTheme)
+                            }
+                        },
+                    )
+                }
             }
         }
     }

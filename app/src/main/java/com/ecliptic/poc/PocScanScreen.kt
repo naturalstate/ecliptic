@@ -86,6 +86,8 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -151,6 +153,7 @@ import android.app.Activity
 import androidx.core.content.FileProvider
 import com.google.android.play.core.review.ReviewManagerFactory
 import com.ecliptic.AppPreferences
+import com.ecliptic.DEFAULT_FONT_SCALE
 import com.ecliptic.DEFAULT_SCAN_TIMEOUT_S
 import com.ecliptic.DEFAULT_UA
 import com.ecliptic.BuildConfig
@@ -713,7 +716,7 @@ fun PocScanScreen(
                     "intel_2" -> CookiesContent(richCookies = signals?.richCookies ?: emptyList(), cookies = signals?.cookies ?: emptyMap())
                     "intel_3" -> SelectionContainer { ApisContent(apis = signals?.detectedApis ?: emptyList()) }
                     "intel_4" -> ReconContent(url = signals?.finalUrl ?: urlInput)
-                    "intel_5" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput)
+                    "intel_5" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput, onSendToRepeater = { viewModel.prefillRepeater(it); bottomTab = TAB_REPEAT })
                     "intel_6" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls) }
                     "intel_7" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
@@ -1757,7 +1760,7 @@ private fun ApisContent(apis: List<DetectedApi>) {
 // ─── Spider tab ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun SpiderContent(viewModel: ScanViewModel, url: String) {
+private fun SpiderContent(viewModel: ScanViewModel, url: String, onSendToRepeater: (String) -> Unit) {
     val spider by viewModel.spiderState.collectAsStateWithLifecycle()
     val status = spider.status
 
@@ -1832,19 +1835,60 @@ private fun SpiderContent(viewModel: ScanViewModel, url: String) {
                 )
                 TabCopyButton { spider.discovered.joinToString("\n") }
             }
-            SelectionContainer(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    items(spider.discovered) { u ->
-                        Text(
-                            u,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
-                        )
-                    }
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                items(spider.discovered) { u ->
+                    UrlActionRow(u, onSendToRepeater = onSendToRepeater)
                 }
+            }
+        }
+    }
+}
+
+/**
+ * A monospace URL/line that, on tap, offers app-wide actions: open in browser,
+ * copy the full URL, and (optionally) send it to the Repeater.
+ */
+@Composable
+private fun UrlActionRow(
+    url: String,
+    modifier: Modifier = Modifier,
+    onSendToRepeater: ((String) -> Unit)? = null,
+) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Text(
+            url,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
+            modifier = modifier.fillMaxWidth().clickable { expanded = true }.padding(vertical = 4.dp),
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Open in browser") },
+                leadingIcon = { Icon(Icons.Filled.OpenInBrowser, null, modifier = Modifier.size(16.dp)) },
+                onClick = { expanded = false; runCatching { uriHandler.openUri(if (url.startsWith("http")) url else "https://$url") } },
+            )
+            DropdownMenuItem(
+                text = { Text("Copy URL") },
+                leadingIcon = { Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(16.dp)) },
+                onClick = {
+                    expanded = false
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("url", url))
+                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                },
+            )
+            if (onSendToRepeater != null) {
+                DropdownMenuItem(
+                    text = { Text("Send to Repeater") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Send, null, modifier = Modifier.size(16.dp)) },
+                    onClick = { expanded = false; onSendToRepeater(url) },
+                )
             }
         }
     }
@@ -4147,6 +4191,7 @@ private fun SettingsSheet(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
         when (selectedTab) {
             0 -> {
                 val saveHtmlSource by AppPreferences.saveHtmlSourceFlow(context).collectAsStateWithLifecycle(false)
+                val fontScale by AppPreferences.fontScaleFlow(context).collectAsStateWithLifecycle(DEFAULT_FONT_SCALE)
                 SettingsTabContent(
                     isDarkTheme = isDarkTheme,
                     onToggleTheme = onToggleTheme,
@@ -4154,10 +4199,12 @@ private fun SettingsSheet(isDarkTheme: Boolean, onToggleTheme: () -> Unit) {
                     followRedirects = followRedirects,
                     scanTimeout = scanTimeout,
                     saveHtmlSource = saveHtmlSource,
+                    fontScale = fontScale,
                     onUaChange = { scope.launch { AppPreferences.setUserAgent(context, it) } },
                     onFollowRedirectsChange = { scope.launch { AppPreferences.setFollowRedirects(context, it) } },
                     onTimeoutChange = { scope.launch { AppPreferences.setScanTimeout(context, it) } },
                     onSaveHtmlSourceChange = { scope.launch { AppPreferences.setSaveHtmlSource(context, it) } },
+                    onFontScaleChange = { scope.launch { AppPreferences.setFontScale(context, it) } },
                 )
             }
             1 -> HelpTabContent()
@@ -4174,10 +4221,12 @@ private fun SettingsTabContent(
     followRedirects: Boolean,
     scanTimeout: Int,
     saveHtmlSource: Boolean,
+    fontScale: Float,
     onUaChange: (String) -> Unit,
     onFollowRedirectsChange: (Boolean) -> Unit,
     onTimeoutChange: (Int) -> Unit,
     onSaveHtmlSourceChange: (Boolean) -> Unit,
+    onFontScaleChange: (Float) -> Unit,
 ) {
     val selectedPreset = UA_PRESETS.indexOfFirst { it.second == userAgent }
         .let { if (it < 0) UA_PRESETS.lastIndex else it } // "Custom" if no match
@@ -4210,6 +4259,29 @@ private fun SettingsTabContent(
                         uncheckedTrackColor = MaterialTheme.colorScheme.outline,
                     ),
                 )
+            }
+        }
+
+        // Text size (applies app-wide via a font-scale override)
+        Spacer(Modifier.height(8.dp))
+        SettingRow(label = "Text size") {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Small" to 0.9f, "Default" to 1.0f, "Large" to 1.15f).forEach { (name, scale) ->
+                    val sel = kotlin.math.abs(fontScale - scale) < 0.01f
+                    Surface(
+                        onClick = { onFontScaleChange(scale) },
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (sel) Teal.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, if (sel) Teal else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                    ) {
+                        Text(
+                            name, fontSize = 11.sp,
+                            fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (sel) Teal else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        )
+                    }
+                }
             }
         }
 
@@ -4381,7 +4453,8 @@ private fun AboutTabContent() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, bottom = 40.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(start = 24.dp, end = 24.dp, bottom = 48.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
@@ -4391,7 +4464,7 @@ private fun AboutTabContent() {
                 fontSize = 28.sp, letterSpacing = 0.12.em, color = Teal,
             ),
         )
-        Text(text = "v${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        Text(text = "v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         Spacer(Modifier.height(12.dp))
         Text("Website Technology Scanner", color = MaterialTheme.colorScheme.onBackground, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
