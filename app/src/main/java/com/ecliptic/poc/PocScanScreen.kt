@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -371,6 +372,9 @@ fun PocScanScreen(
     var codeSubTab   by remember { mutableIntStateOf(0) }   // 0=SOURCE 1=JS 2=DOM 3=NET 4=CONSOLE
     var showSettings by remember { mutableStateOf(false) }
     var showShareSheet by remember { mutableStateOf(false) }
+    // Deep-scan JS results for the Strings tab, hoisted here (keyed per scan) so they
+    // survive switching between Code subtabs, which disposes the subtab content.
+    var stringsDeepText by remember(signals?.finalUrl) { mutableStateOf("") }
     var selectedTech by remember { mutableStateOf<Technology?>(null) }
     var isFullScreen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -487,7 +491,9 @@ fun PocScanScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                // weight(1f) bounds the left block so a long host clips instead of
+                // pushing the history arrows/actions on the right out of position.
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         Box(
                             modifier = Modifier
@@ -725,7 +731,7 @@ fun PocScanScreen(
                     "intel_7" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls) }
                     "intel_8" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_1"  -> SelectionContainer { StringsContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList()) }
+                    "code_1"  -> SelectionContainer { StringsContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), deepText = stringsDeepText, onDeepText = { stringsDeepText = it }) }
                     "code_2"  -> SelectionContainer { JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap()) }
                     "code_3"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_4"  -> SelectionContainer { NetContent(scanRequests = signals?.networkRequests ?: emptyList(), liveRequests = liveNetworkRequests) }
@@ -788,7 +794,9 @@ fun PocScanScreen(
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 40.dp),
+                modifier = Modifier.fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text("Export report", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
@@ -2089,15 +2097,14 @@ private fun ParamContent(html: String) {
 // ─── Strings tab (Code) ───────────────────────────────────────────────────────
 
 @Composable
-private fun StringsContent(html: String, scriptUrls: List<String>) {
+private fun StringsContent(html: String, scriptUrls: List<String>, deepText: String, onDeepText: (String) -> Unit) {
     val scope = rememberCoroutineScope()
-    var deepScanned by remember(html) { mutableStateOf(false) }
     var deepLoading by remember { mutableStateOf(false) }
-    var extraText by remember(html) { mutableStateOf("") }
+    val deepScanned = deepText.isNotBlank()
 
-    val findings = remember(html, extraText) {
+    val findings = remember(html, deepText) {
         (Extractor.findStrings(html) +
-            if (extraText.isNotBlank()) Extractor.findStrings(extraText) else emptyList()).distinct()
+            if (deepText.isNotBlank()) Extractor.findStrings(deepText) else emptyList()).distinct()
     }
     val grouped = findings.groupBy { it.category }.toList()
 
@@ -2118,8 +2125,7 @@ private fun StringsContent(html: String, scriptUrls: List<String>) {
                         scope.launch {
                             val sb = StringBuilder()
                             scriptUrls.take(8).forEach { sb.append(fetchTextContent(it)).append('\n') }
-                            extraText = sb.toString()
-                            deepScanned = true
+                            onDeepText(sb.toString())
                             deepLoading = false
                         }
                     },
