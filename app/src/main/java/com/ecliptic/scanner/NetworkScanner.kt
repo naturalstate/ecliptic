@@ -212,6 +212,14 @@ suspend fun fetchReconFiles(baseUrl: String): ReconFiles = withContext(Dispatche
     )
 }
 
+data class EmailSecurity(
+    val spf: String? = null,
+    val dmarc: String? = null,
+    val dkimSelector: String? = null,   // first selector found, if any
+    val dnssec: Boolean? = null,        // null = unknown
+    val caa: List<String> = emptyList(),
+)
+
 data class HostReputation(
     val source: String = "URLhaus",
     val listed: Boolean = false,
@@ -236,6 +244,8 @@ data class ReconData(
     val ipNeighbors: List<String> = emptyList(),
     val reputation: HostReputation? = null,
     val similarDomains: List<SimilarDomain> = emptyList(),
+    val email: EmailSecurity? = null,
+    val httpsRedirect: Boolean? = null,   // does http:// redirect to https://? null = unknown
     val fetchedAt: Long = 0L,
 ) {
     val isEmpty: Boolean get() = dns == null && rdap == null && files == null && asn == null &&
@@ -261,6 +271,8 @@ suspend fun fetchReconData(url: String, host: String?): ReconData = coroutineSco
     val subsD  = host?.let { h -> async { runCatching { fetchSubdomains(h) }.getOrDefault(emptyList()) } }
     val repD   = host?.let { h -> async { runCatching { fetchHostReputation(h) }.getOrNull() } }
     val simD   = host?.let { h -> async { runCatching { fetchSimilarDomains(h) }.getOrDefault(emptyList()) } }
+    val emailD = host?.let { h -> async { runCatching { fetchEmailSecurity(h) }.getOrNull() } }
+    val redirD = host?.let { h -> async { runCatching { fetchHttpRedirect(h) }.getOrNull() } }
 
     val dns = dnsD?.await()
     val ip  = dns?.aRecords?.firstOrNull()
@@ -276,8 +288,62 @@ suspend fun fetchReconData(url: String, host: String?): ReconData = coroutineSco
         ipNeighbors = neighbors,
         reputation = repD?.await(),
         similarDomains = simD?.await() ?: emptyList(),
+        email = emailD?.await(),
+        httpsRedirect = redirD?.await(),
         fetchedAt = System.currentTimeMillis(),
     )
+}
+
+/** Generic DNS query via dns.google; returns the raw "data" strings for a record type. */
+private suspend fun queryDns(name: String, type: Int): List<String> = withContext(Dispatchers.IO) {
+    try {
+        val enc = URLEncoder.encode(name, "UTF-8")
+        val req = Request.Builder()
+            .url("https://dns.google/resolve?name=$enc&type=$type")
+            .header("Accept", "application/dns-json")
+            .build()
+        httpClient.newCall(req).execute().use { resp ->
+            val body = resp.body?.string() ?: return@withContext emptyList()
+            val ans = JSONObject(body).optJSONArray("Answer") ?: return@withContext emptyList()
+            (0 until ans.length()).mapNotNull { i ->
+                ans.optJSONObject(i)?.optString("data")?.trim()?.removeSurrounding("\"")?.ifBlank { null }
+            }
+        }
+    } catch (_: Exception) { emptyList() }
+}
+
+/** SPF, DMARC, DKIM (common selectors), DNSSEC and CAA for a domain. */
+private val DKIM_SELECTORS = listOf("default", "google", "selector1", "selector2", "s1", "s2", "k1", "dkim", "mail", "smtp", "mandrill", "mailjet")
+
+suspend fun fetchEmailSecurity(domain: String): EmailSecurity = coroutineScope {
+    val spfD   = async { queryDns(domain, 16).firstOrNull { it.startsWith("v=spf1", ignoreCase = true) } }
+    val dmarcD = async { queryDns("_dmarc.$domain", 16).firstOrNull { it.contains("v=DMARC1", ignoreCase = true) } }
+    val caaD   = async { queryDns(domain, 257) }
+    // DNSKEY present → DNSSEC signed
+    val dnskeyD = async { queryDns(domain, 48).isNotEmpty() }
+    val dkimD  = async {
+        DKIM_SELECTORS.firstOrNull { sel ->
+            queryDns("$sel._domainkey.$domain", 16).any { it.contains("DKIM1", true) || it.contains("k=rsa", true) || it.contains("p=", true) }
+        }
+    }
+    EmailSecurity(
+        spf = spfD.await(),
+        dmarc = dmarcD.await(),
+        dkimSelector = dkimD.await(),
+        dnssec = dnskeyD.await(),
+        caa = caaD.await().take(10),
+    )
+}
+
+/** Does http://host redirect to https? null if the probe fails. */
+suspend fun fetchHttpRedirect(host: String): Boolean? = withContext(Dispatchers.IO) {
+    try {
+        val req = Request.Builder().url("http://$host/").header("User-Agent", USER_AGENT).build()
+        httpClient.newCall(req).execute().use { resp ->
+            // OkHttp follows redirects by default; the final request URL scheme tells us.
+            resp.request.url.scheme.equals("https", ignoreCase = true)
+        }
+    } catch (_: Exception) { null }
 }
 
 /** Subdomains via crt.sh certificate transparency logs. */

@@ -5,6 +5,7 @@ import com.ecliptic.fingerprint.Technology
 import com.ecliptic.scanner.CookieInfo
 import com.ecliptic.scanner.DetectedApi
 import com.ecliptic.scanner.DnsResult
+import com.ecliptic.scanner.EmailSecurity
 import com.ecliptic.scanner.HostReputation
 import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
@@ -270,6 +271,8 @@ private fun ReconData.toJson() = JSONObject().apply {
     if (similarDomains.isNotEmpty()) put("similarDomains", JSONArray().also { arr ->
         similarDomains.forEach { s -> arr.put(JSONObject().put("domain", s.domain).put("registered", s.registered)) }
     })
+    email?.let { put("email", it.toJson()) }
+    httpsRedirect?.let { put("httpsRedirect", it) }
     put("fetchedAt", fetchedAt)
 }
 
@@ -286,7 +289,25 @@ private fun JSONObject.toReconData() = ReconData(
             arr.optJSONObject(i)?.let { SimilarDomain(it.optString("domain"), it.optBoolean("registered")) }
         }
     } ?: emptyList(),
+    email = optJSONObject("email")?.toEmailSecurity(),
+    httpsRedirect = if (has("httpsRedirect")) optBoolean("httpsRedirect") else null,
     fetchedAt = optLong("fetchedAt", 0L),
+)
+
+private fun EmailSecurity.toJson() = JSONObject().apply {
+    spf?.let { put("spf", it) }
+    dmarc?.let { put("dmarc", it) }
+    dkimSelector?.let { put("dkimSelector", it) }
+    dnssec?.let { put("dnssec", it) }
+    if (caa.isNotEmpty()) put("caa", JSONArray(caa))
+}
+
+private fun JSONObject.toEmailSecurity() = EmailSecurity(
+    spf = optString("spf").ifBlank { null },
+    dmarc = optString("dmarc").ifBlank { null },
+    dkimSelector = optString("dkimSelector").ifBlank { null },
+    dnssec = if (has("dnssec")) optBoolean("dnssec") else null,
+    caa = optJSONArray("caa")?.toStringList() ?: emptyList(),
 )
 
 private fun HostReputation.toJson() = JSONObject().apply {

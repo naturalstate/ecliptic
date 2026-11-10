@@ -54,6 +54,20 @@ fun generateHtmlReport(
         }
     }
 
+    fun analysisHtml(): String {
+        val findings = SecurityAnalyzer.analyze(signals)
+        if (findings.isEmpty()) return "<p class='muted'>No issues flagged</p>"
+        return buildString {
+            append("<table>")
+            for (f in findings) {
+                val cls = when (f.severity) { "alert" -> "fail"; "warn" -> "warn"; "ok" -> "pass"; else -> "muted" }
+                val mark = when (f.severity) { "alert", "warn" -> "⚠"; "ok" -> "✓"; else -> "ⓘ" }
+                append("<tr><td><span class='$cls'>$mark ${esc(f.title)}</span><br><span class='muted'>${esc(f.detail)}</span></td></tr>")
+            }
+            append("</table>")
+        }
+    }
+
     fun headersHtml(): String = buildString {
         append("<table><tr><th>Header</th><th>Value</th><th>Status</th></tr>")
         for ((key, label) in securityHeaders) {
@@ -227,6 +241,22 @@ fun generateHtmlReport(
         }
     }
 
+    fun emailSecHtml(): String {
+        val em = recon?.email ?: return "<p class='muted'>Not checked</p>"
+        fun row(label: String, pass: Boolean, value: String) =
+            "<tr><td><span class='${if (pass) "pass" else "muted"}'>${if (pass) "✓" else "✗"}</span> $label</td><td class='mono'>${esc(value)}</td></tr>"
+        return buildString {
+            append("<table>")
+            append(row("SPF", em.spf != null, em.spf ?: "No SPF record"))
+            append(row("DMARC", em.dmarc != null, em.dmarc ?: "No DMARC record"))
+            append(row("DKIM", em.dkimSelector != null, em.dkimSelector?.let { "selector: $it" } ?: "No common selector found"))
+            append(row("DNSSEC", em.dnssec == true, if (em.dnssec == true) "Signed" else "Not signed"))
+            append(row("CAA", em.caa.isNotEmpty(), if (em.caa.isNotEmpty()) em.caa.joinToString("; ") else "No CAA records"))
+            recon?.httpsRedirect?.let { append(row("HTTP→HTTPS", it, if (it) "Redirects to HTTPS" else "Does NOT redirect")) }
+            append("</table>")
+        }
+    }
+
     fun reputationHtml(): String {
         val rep = recon?.reputation ?: return "<p class='muted'>Not checked</p>"
         if (rep.error != null) return "<p class='muted'>Check unavailable (${esc(rep.source)})</p>"
@@ -329,6 +359,9 @@ ${techsHtml()}
 <h2>Security Headers</h2>
 ${headersHtml()}
 
+<h2>Security Analysis</h2>
+${analysisHtml()}
+
 <h2>Detected APIs</h2>
 ${apisHtml()}
 
@@ -346,6 +379,9 @@ ${whoisHtml()}
 
 <h2>DNS Records</h2>
 ${dnsHtml()}
+
+<h2>DNS / Email Security</h2>
+${emailSecHtml()}
 
 <h2>Host Reputation</h2>
 ${reputationHtml()}

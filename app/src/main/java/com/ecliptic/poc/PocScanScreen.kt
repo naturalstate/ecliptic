@@ -66,6 +66,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
@@ -173,6 +174,7 @@ import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RdapResult
 import com.ecliptic.scanner.ReconData
+import com.ecliptic.scanner.SecurityAnalyzer
 import com.ecliptic.scanner.ReconFiles
 import com.ecliptic.scanner.Extractor
 import com.ecliptic.scanner.RepeaterResponse
@@ -729,7 +731,7 @@ fun PocScanScreen(
                     // dedicated copy button for a large block (Source, DOM) are left as-is.
                     "tech"    -> SelectionContainer { TechResultsContent(techs = techs, error = signals?.error, url = signals?.finalUrl ?: "", onTechClick = { selectedTech = it }) }
                     "intel_0" -> SelectionContainer { HeadersContent(requestHeaders = signals?.requestHeaders ?: emptyMap(), responseHeaders = signals?.headers ?: emptyMap()) }
-                    "intel_1" -> SecurityHeadersContent(responseHeaders = signals?.headers ?: emptyMap())
+                    "intel_1" -> SecurityHeadersContent(signals = signals, responseHeaders = signals?.headers ?: emptyMap())
                     "intel_2" -> CookiesContent(richCookies = signals?.richCookies ?: emptyList(), cookies = signals?.cookies ?: emptyMap())
                     "intel_3" -> SelectionContainer { ApisContent(apis = signals?.detectedApis ?: emptyList()) }
                     "intel_4" -> ReconContent(
@@ -1730,12 +1732,13 @@ private val SECURITY_HEADER_KEYS = listOf(
 )
 
 @Composable
-private fun SecurityHeadersContent(responseHeaders: Map<String, String>) {
+private fun SecurityHeadersContent(signals: RawSignals?, responseHeaders: Map<String, String>) {
     val normalised = responseHeaders.mapKeys { it.key.lowercase() }
     val present  = SECURITY_HEADER_KEYS.filter { (k, _) -> k in normalised }
     val missing  = SECURITY_HEADER_KEYS.filter { (k, _) -> k !in normalised }
     val score    = present.size
     val total    = SECURITY_HEADER_KEYS.size
+    val findings = remember(signals) { signals?.let { SecurityAnalyzer.analyze(it) } ?: emptyList() }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1772,6 +1775,25 @@ private fun SecurityHeadersContent(responseHeaders: Map<String, String>) {
                 trackColor = MaterialTheme.colorScheme.surface,
             )
             Spacer(Modifier.height(12.dp))
+        }
+        // ── Analysis: concrete misconfigurations (framing, CSP, CORS, SRI, …) ──
+        if (findings.isNotEmpty()) {
+            item {
+                Text("ANALYSIS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.12.em)
+                Spacer(Modifier.height(4.dp))
+            }
+            items(findings) { f ->
+                val amber = Color(0xFFD9920A)
+                val accent = when (f.severity) { "alert" -> Red; "warn" -> amber; "ok" -> Green; else -> MaterialTheme.colorScheme.onSurfaceVariant }
+                val mark = when (f.severity) { "alert" -> "⚠"; "warn" -> "⚠"; "ok" -> "✓"; else -> "ⓘ" }
+                Surface(modifier = Modifier.fillMaxWidth(), color = accent.copy(alpha = 0.08f), shape = RoundedCornerShape(8.dp)) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("$mark  ${f.title}", color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(f.detail, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, lineHeight = 15.sp)
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(12.dp)) }
         }
         if (present.isNotEmpty()) {
             item {
@@ -2388,6 +2410,29 @@ private fun ReconContent(
                         r.updated?.let  { NetKvRow("Updated", it) }
                         if (r.status.isNotEmpty()) NetKvRow("Status", r.status.joinToString(", "))
                         if (r.nameServers.isNotEmpty()) NetKvRow("Name servers", r.nameServers.joinToString("\n"))
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+
+        // ── DNS / email security (SPF / DMARC / DKIM / DNSSEC / CAA) ────────────
+        item { NetSectionHeader("DNS SECURITY", null, loading) }
+        item {
+            val em = data?.email
+            if (em == null) {
+                Text(if (loading) "Checking…" else "Not checked", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            } else {
+                Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SecCheckRow("SPF", em.spf != null, em.spf ?: "No SPF record")
+                        SecCheckRow("DMARC", em.dmarc != null, em.dmarc ?: "No DMARC record")
+                        SecCheckRow("DKIM", em.dkimSelector != null, em.dkimSelector?.let { "Selector: $it" } ?: "No common selector found")
+                        SecCheckRow("DNSSEC", em.dnssec == true, if (em.dnssec == true) "Signed (DNSKEY present)" else "Not signed")
+                        SecCheckRow("CAA", em.caa.isNotEmpty(), if (em.caa.isNotEmpty()) em.caa.joinToString("\n") else "No CAA records")
+                        data?.httpsRedirect?.let { r ->
+                            SecCheckRow("HTTP→HTTPS", r, if (r) "Redirects to HTTPS" else "Does NOT redirect to HTTPS")
+                        }
                     }
                 }
             }
@@ -3536,6 +3581,21 @@ private fun NetKvRow(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.weight(0.35f))
         Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, modifier = Modifier.weight(0.65f))
+    }
+}
+
+@Composable
+private fun SecCheckRow(label: String, pass: Boolean, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Icon(
+            if (pass) Icons.Filled.Check else Icons.Filled.Close,
+            null,
+            tint = if (pass) Green else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(15.dp).padding(top = 1.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(78.dp))
+        Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp, modifier = Modifier.weight(1f))
     }
 }
 
