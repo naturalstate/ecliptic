@@ -44,6 +44,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.composed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -196,6 +198,8 @@ import com.ecliptic.ui.theme.SpaceGrotesk
 import com.ecliptic.ui.theme.Teal
 import com.ecliptic.ui.theme.categoryAccentColor
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 // Bottom nav indices
 private const val TAB_TECH   = 0
@@ -539,8 +543,9 @@ fun PocScanScreen(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (historySize > 1) {
-                        IconButton(onClick = { viewModel.navigateHistory(-1) }, enabled = historyPosition > 1, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous scan", tint = if (historyPosition > 1) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), modifier = Modifier.size(20.dp))
+                        // Tap to step one scan; hold to fast-advance through history.
+                        HistoryArrow(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous scan", historyPosition > 1) {
+                            viewModel.navigateHistory(-1)
                         }
                         Text(
                             text = "$historyPosition / $historySize",
@@ -548,8 +553,8 @@ fun PocScanScreen(
                             fontSize = 12.sp,
                             fontFamily = SpaceGrotesk,
                         )
-                        IconButton(onClick = { viewModel.navigateHistory(1) }, enabled = historyPosition < historySize, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next scan", tint = if (historyPosition < historySize) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), modifier = Modifier.size(20.dp))
+                        HistoryArrow(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next scan", historyPosition < historySize) {
+                            viewModel.navigateHistory(1)
                         }
                     }
                     if (hasScanned && !scanning) {
@@ -643,7 +648,7 @@ fun PocScanScreen(
         // ── Sub-tab chips (INTEL / CODE only, hidden in fullscreen) ──────────
         if (!isFullScreen && hasScanned && !scanning && (bottomTab == TAB_INTEL || bottomTab == TAB_CODE)) {
             val subLabels = if (bottomTab == TAB_INTEL)
-                listOf("HEADERS", "SECURITY", "COOKIES", "APIS", "RECON", "PARAM", "SPIDER", "NETWORK", "REQ/RES")
+                listOf("HEADERS", "SEC HEADERS", "COOKIES", "APIS", "RECON", "PARAM", "SPIDER", "NETWORK", "REQ/RES")
             else listOf("SOURCE", "STRINGS", "JS", "DOM", "NET", "CONSOLE")
             val currentSub = if (bottomTab == TAB_INTEL) intelSubTab else codeSubTab
             LazyRow(
@@ -799,6 +804,7 @@ fun PocScanScreen(
         var incDark by remember { mutableStateOf(false) }
         ModalBottomSheet(
             onDismissRequest = { showShareSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
             Column(
@@ -1309,6 +1315,50 @@ private fun TechDetailSheet(tech: Technology, scanUrl: String = "", onDismiss: (
             }
         }
       }
+    }
+}
+
+// ─── History arrow (tap once, or hold to repeat) ───────────────────────────────
+
+/** Fires [onClick] once on press, then repeatedly while held after a short delay. */
+private fun Modifier.repeatingClickable(
+    enabled: Boolean,
+    initialDelayMs: Long = 400,
+    repeatMs: Long = 90,
+    onClick: () -> Unit,
+): Modifier = composed {
+    val scope = rememberCoroutineScope()
+    pointerInput(enabled) {
+        if (!enabled) return@pointerInput
+        detectTapGestures(onPress = {
+            onClick()
+            val job = scope.launch {
+                delay(initialDelayMs)
+                while (isActive) { onClick(); delay(repeatMs) }
+            }
+            tryAwaitRelease()
+            job.cancel()
+        })
+    }
+}
+
+@Composable
+private fun HistoryArrow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onStep: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.size(36.dp).repeatingClickable(enabled) { onStep() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon, contentDescription,
+            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
@@ -2924,32 +2974,40 @@ private fun SourceContent(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Search…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                leadingIcon = {
-                    Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                },
-                trailingIcon = if (searchQuery.isNotEmpty()) {
-                    { IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Filled.Close, null, modifier = Modifier.size(14.dp))
-                    } }
-                } else null,
-                singleLine = true,
-                textStyle = TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Teal,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    focusedTextColor = MaterialTheme.colorScheme.onBackground,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    cursorColor = Teal,
-                ),
+            // Compact search field (stock OutlinedTextField has a ~56dp min height
+            // that reads as too tall here).
+            Surface(
+                modifier = Modifier.weight(1f).height(38.dp),
                 shape = RoundedCornerShape(8.dp),
-            )
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        if (searchQuery.isEmpty()) {
+                            Text("Search…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            singleLine = true,
+                            textStyle = TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onBackground),
+                            cursorBrush = SolidColor(Teal),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(26.dp)) {
+                            Icon(Icons.Filled.Close, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
             if (matchIndices.isNotEmpty()) {
                 Text(
                     "${currentMatchIdx + 1}/${matchIndices.size}",
