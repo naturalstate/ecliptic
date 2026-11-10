@@ -67,6 +67,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
@@ -574,75 +575,40 @@ fun PocScanScreen(
             }
         }
 
-        // ── URL input (Tech tab only, hidden in fullscreen) ───────────────────
+        // ── Scan bar — morphs through edit → scanning → done ──────────────────
         if (!isFullScreen && (bottomTab == TAB_TECH || !hasScanned)) {
-            // Finalized = a completed scan whose URL hasn't been edited since; used to
-            // tint the input so the user sees the URL has been processed.
-            val finalized = hasScanned && !scanning && urlInput.isNotBlank()
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start = 16.dp, end = 16.dp,
-                        top = if (isLandscape) 6.dp else 8.dp,
-                        bottom = if (isLandscape) 4.dp else 0.dp,
-                    ),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = urlInput,
-                    onValueChange = { viewModel.onUrlChanged(it) },
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    placeholder = { Text("example.com", fontFamily = SpaceGrotesk, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    singleLine = true,
-                    enabled = !scanning,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { scan() }),
-                    trailingIcon = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (urlInput.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.onUrlChanged(""); if (hasScanned) { viewModel.onNewScan(); bottomTab = TAB_TECH } }, enabled = !scanning, modifier = Modifier.size(36.dp)) {
-                                    Icon(Icons.Filled.Close, "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
-                                }
-                            }
-                            IconButton(onClick = { paste() }, enabled = !scanning, modifier = Modifier.size(36.dp)) {
-                                Icon(Icons.Filled.ContentPaste, "Paste", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
-                            }
-                        }
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onBackground,
-                        unfocusedTextColor = if (finalized) Teal else MaterialTheme.colorScheme.onBackground,
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = if (finalized) Teal.copy(alpha = 0.07f) else MaterialTheme.colorScheme.surface,
-                        focusedBorderColor = Teal,
-                        unfocusedBorderColor = if (finalized) Teal.copy(alpha = 0.7f) else MaterialTheme.colorScheme.outline,
-                        cursorColor = Teal,
-                        disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        disabledContainerColor = MaterialTheme.colorScheme.surface,
-                        disabledBorderColor = MaterialTheme.colorScheme.outline,
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    textStyle = TextStyle(fontFamily = SpaceGrotesk, fontSize = 14.sp),
-                )
-                Button(
-                    onClick = { scan() },
-                    enabled = !scanning,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Teal, contentColor = Navy,
-                        disabledContainerColor = MaterialTheme.colorScheme.surface,
-                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 18.dp),
-                    modifier = Modifier.height(50.dp),
-                ) {
-                    if (scanning) {
-                        CircularProgressIndicator(modifier = Modifier.size(17.dp), color = Navy, strokeWidth = 2.dp)
-                    } else {
-                        Text("SCAN", fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, letterSpacing = 0.08.em, fontSize = 13.sp)
-                    }
+            // editingUrl lets the user reopen the input after a scan; it resets whenever
+            // a new scan lands (signals change) or the slate is cleared (hasScanned).
+            var editingUrl by remember(signals?.finalUrl, hasScanned) { mutableStateOf(false) }
+            val barState = when {
+                scanning -> "scanning"
+                hasScanned && !editingUrl -> "done"
+                else -> "edit"
+            }
+            AnimatedContent(
+                targetState = barState,
+                transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(140)) },
+                label = "scanbar",
+                modifier = Modifier.fillMaxWidth().padding(
+                    start = 16.dp, end = 16.dp,
+                    top = if (isLandscape) 6.dp else 8.dp,
+                    bottom = if (isLandscape) 4.dp else 0.dp,
+                ),
+            ) { s ->
+                when (s) {
+                    "scanning" -> ScanningBar(stage = scanStage)
+                    "done" -> ScannedBar(
+                        statusCode = signals?.headers?.get("_status"),
+                        techCount = techs.size,
+                        onEdit = { editingUrl = true },
+                    )
+                    else -> ScanInputBar(
+                        value = urlInput,
+                        onValueChange = { viewModel.onUrlChanged(it) },
+                        onClear = { viewModel.onUrlChanged(""); if (hasScanned) { viewModel.onNewScan(); bottomTab = TAB_TECH } },
+                        onPaste = { paste() },
+                        onScan = { editingUrl = false; scan() },
+                    )
                 }
             }
         }
@@ -1002,8 +968,7 @@ private fun TechResultsContent(
 
         item {
             val uriHandler = LocalUriHandler.current
-            Text(text = url, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
-            Spacer(modifier = Modifier.height(2.dp))
+            // (URL shown once in the pinned header + the morphing scan bar; no repeat here.)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1361,6 +1326,125 @@ private fun HistoryArrow(
             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
             modifier = Modifier.size(20.dp),
         )
+    }
+}
+
+// ─── Scan bar states (edit → scanning → done) ──────────────────────────────────
+
+@Composable
+private fun ScanInputBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onClear: () -> Unit,
+    onPaste: () -> Unit,
+    onScan: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            modifier = Modifier.weight(1f).height(52.dp),
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize().padding(start = 14.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (value.isEmpty()) {
+                        Text("example.com", fontFamily = SpaceGrotesk, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        singleLine = true,
+                        textStyle = TextStyle(fontFamily = SpaceGrotesk, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground),
+                        cursorBrush = SolidColor(Teal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                        keyboardActions = KeyboardActions(onGo = { onScan() }),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (value.isNotEmpty()) {
+                    IconButton(onClick = onClear, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Filled.Close, "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+                    }
+                }
+                IconButton(onClick = onPaste, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Filled.ContentPaste, "Paste", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+        Button(
+            onClick = onScan,
+            colors = ButtonDefaults.buttonColors(containerColor = Teal, contentColor = Navy),
+            shape = RoundedCornerShape(10.dp),
+            contentPadding = PaddingValues(horizontal = 18.dp),
+            modifier = Modifier.height(52.dp),
+        ) {
+            Text("SCAN", fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, letterSpacing = 0.08.em, fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
+private fun ScanningBar(stage: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = Teal.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, Teal.copy(alpha = 0.5f)),
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Teal, strokeWidth = 2.dp)
+                Text(stage.ifBlank { "Scanning…" }, color = Teal, fontFamily = SpaceGrotesk, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            }
+            // Indeterminate scanline along the bottom edge.
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.BottomCenter),
+                color = Teal,
+                trackColor = Teal.copy(alpha = 0.15f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScannedBar(statusCode: String?, techCount: Int, onEdit: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().height(44.dp).clickable { onEdit() },
+        shape = RoundedCornerShape(10.dp),
+        color = Teal.copy(alpha = 0.06f),
+        border = BorderStroke(1.dp, Teal.copy(alpha = 0.35f)),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Check, null, tint = Teal, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                buildString {
+                    append("Scan complete")
+                    statusCode?.takeIf { it.isNotBlank() && it != "—" }?.let { append(" · HTTP $it") }
+                    append(" · $techCount ${if (techCount == 1) "tech" else "techs"}")
+                },
+                color = Teal, fontFamily = SpaceGrotesk, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                maxLines = 1, modifier = Modifier.weight(1f),
+            )
+            Icon(Icons.Filled.Edit, "Edit URL", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Edit", color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = SpaceGrotesk, fontSize = 11.sp)
+        }
     }
 }
 
