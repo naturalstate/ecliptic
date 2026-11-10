@@ -1,33 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- White: vertical stem -->
+    <!-- Eclipse crescent: teal light disc, dark bite to the upper-right.
+         evenOdd cuts the inner circle, letting the background show through. -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M30,24 L46,24 L46,84 L30,84 Z" />
+        android:fillType="evenOdd"
+        android:pathData="M50,56 m-28,0 a28,28 0 1,0 56,0 a28,28 0 1,0 -56,0 M64,44 m-24,0 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="24" android:startY="30"
+                android:endX="80" android:endY="84">
+                <item android:offset="0.0" android:color="#FF3BEBC9" />
+                <item android:offset="1.0" android:color="#FF10B981" />
+            </gradient>
+        </aapt:attr>
+    </path>
 
-    <!-- White: top arm -->
+    <!-- Scan dot — top-right accent -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M46,24 L80,24 L80,38 L46,38 Z" />
-
-    <!-- Teal: middle arm (brand accent) -->
-    <path
-        android:fillColor="#21AD9A"
-        android:pathData="M46,51 L76,51 L76,63 L46,63 Z" />
-
-    <!-- White: bottom arm -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M46,70 L80,70 L80,84 L46,84 Z" />
-
-    <!-- Teal scan dot — top right accent -->
-    <path
-        android:fillColor="#21AD9A"
-        android:pathData="M84,28 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" />
+        android:fillColor="#FF00E5C8"
+        android:pathData="M74,34 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
 
 </vector>
