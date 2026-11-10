@@ -586,9 +586,11 @@ fun PocScanScreen(
 
         // ── Scan bar — morphs through edit → scanning → done ──────────────────
         if (!isFullScreen && (bottomTab == TAB_TECH || !hasScanned)) {
-            // editingUrl lets the user reopen the input after a scan; it resets whenever
-            // a new scan lands (signals change) or the slate is cleared (hasScanned).
-            var editingUrl by remember(signals?.finalUrl, hasScanned) { mutableStateOf(false) }
+            // editingUrl lets the user reopen the input after a scan. Key it on the
+            // history position (not the URL string) so moving to another scan — even a
+            // re-scan of the SAME site — always drops out of edit mode; otherwise same-URL
+            // snapshots share the key and the bar stays stuck open, blocking navigation.
+            var editingUrl by remember(historyPosition, hasScanned) { mutableStateOf(false) }
             val barState = when {
                 scanning -> "scanning"
                 hasScanned && !editingUrl -> "done"
