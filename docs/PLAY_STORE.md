@@ -27,8 +27,8 @@ Based on actual app behavior (no backend, no SDKs, no accounts).
 
 ## Third-party endpoints contacted during a scan
 Disclose in the privacy policy (already listed there):
-`dns.google`, `rdap.net`, `rdap.iana.org`, `ipinfo.io`, `crt.sh` (subdomains),
-`api.hackertarget.com` (reverse-IP), `urlhaus-api.abuse.ch` (reputation),
+`dns.google` (DNS + SPF/DMARC/DKIM/DNSSEC/CAA), `rdap.net`, `rdap.iana.org`,
+`ipinfo.io`, `crt.sh` (subdomains), `api.hackertarget.com` (reverse-IP),
 `cdn.jsdelivr.net` + `cdn.simpleicons.org` (icons), Google Fonts, Google Play
 (in-app review), plus the scanned site itself.
 

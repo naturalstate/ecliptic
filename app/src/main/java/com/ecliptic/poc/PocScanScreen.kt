@@ -2509,18 +2509,21 @@ private fun ReconContent(
         }
         item { Spacer(Modifier.height(8.dp)) }
 
-        // ── Host reputation (URLhaus) ──────────────────────────────────────────
-        item { NetSectionHeader("REPUTATION", null, loading) }
-        item {
-            val rep = data?.reputation
-            when {
-                rep == null -> Text(if (loading) "Checking…" else "Not checked", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                rep.error != null -> Text("Check unavailable (${rep.source})", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                rep.listed -> Surface(color = Red.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Text("⚠  Listed on ${rep.source}" + (rep.detail?.let { " — $it" } ?: ""), modifier = Modifier.padding(12.dp), color = Red, fontSize = 12.sp)
-                }
-                else -> Surface(color = Teal.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Text("✓  No malicious records on ${rep.source}", modifier = Modifier.padding(12.dp), color = Teal, fontSize = 12.sp)
+        // ── Trust signals (keyless; derived from recon) ────────────────────────
+        val trust = remember(data) { SecurityAnalyzer.trustSignals(data) }
+        item { NetSectionHeader("TRUST SIGNALS", null, loading) }
+        if (trust.isEmpty()) {
+            item { Text(if (loading) "Evaluating…" else "Not checked", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+        } else {
+            items(trust) { f ->
+                val amber = Color(0xFFD9920A)
+                val accent = when (f.severity) { "alert" -> Red; "warn" -> amber; "ok" -> Green; else -> MaterialTheme.colorScheme.onSurfaceVariant }
+                val mark = when (f.severity) { "alert", "warn" -> "⚠"; "ok" -> "✓"; else -> "ⓘ" }
+                Surface(modifier = Modifier.fillMaxWidth(), color = accent.copy(alpha = 0.08f), shape = RoundedCornerShape(8.dp)) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("$mark  ${f.title}", color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(f.detail, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, lineHeight = 15.sp)
+                    }
                 }
             }
         }
@@ -2546,19 +2549,30 @@ private fun ReconContent(
         // ── IP neighbors (reverse-IP) ──────────────────────────────────────────
         val neighbors = data?.ipNeighbors ?: emptyList()
         item { NetSectionHeader("IP NEIGHBORS", neighbors.size.takeIf { it > 0 }, loading) }
-        if (data != null && data.dns?.aRecords?.isNotEmpty() == true) {
+        val ipAddr = data?.dns?.aRecords?.firstOrNull()
+        if (ipAddr != null) {
+            // Target reference, so the neighbor list reads in context.
             item {
-                val ipAddr = data.dns?.aRecords?.firstOrNull().orEmpty()
+                Text(
+                    "${domain ?: "Target"} is hosted at $ipAddr",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            item {
                 when {
-                    !data.ipChecked -> Text(
-                        if (loading) "Looking up neighbors…" else "Could not determine (reverse-IP lookup unavailable)",
+                    data?.ipChecked != true -> Text(
+                        if (loading) "Looking up neighbors…" else "Could not determine — reverse-IP lookup unavailable (rate-limited or blocked).",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp,
                     )
-                    data.dedicatedIp -> Surface(color = Teal.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp)) {
-                        Text("Dedicated IP — only this site detected on $ipAddr", modifier = Modifier.padding(12.dp), color = Teal, fontSize = 12.sp)
+                    data?.dedicatedIp == true -> Surface(color = Teal.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp)) {
+                        Text(
+                            "Dedicated IP — only ${domain ?: "this site"} resolves to $ipAddr. Reverse-IP found no other sites co-hosted here, so the list below is empty by design.",
+                            modifier = Modifier.padding(12.dp), color = Teal, fontSize = 12.sp, lineHeight = 16.sp,
+                        )
                     }
                     else -> Surface(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp)) {
-                        Text("Shared IP — ${neighbors.size} sites on $ipAddr", modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+                        Text("Shared IP — ${neighbors.size} other site(s) resolve to $ipAddr.", modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
                     }
                 }
             }

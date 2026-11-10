@@ -112,8 +112,57 @@ object SecurityAnalyzer {
         h["x-powered-by"]?.let { out += SecFinding("X-Powered-By disclosed", "Reveals backend stack: \"$it\".", "info") }
         h["server"]?.takeIf { it.any(Char::isDigit) }?.let { out += SecFinding("Server version disclosed", "Server header reveals a version: \"$it\".", "info") }
 
-        // Severity order: alert, warn, info, ok
-        val rank = mapOf("alert" to 0, "warn" to 1, "info" to 2, "ok" to 3)
-        return out.sortedBy { rank[it.severity] ?: 4 }
+        return out.sortedBy { SEV_RANK[it.severity] ?: 4 }
+    }
+
+    private val SEV_RANK = mapOf("alert" to 0, "warn" to 1, "info" to 2, "ok" to 3)
+
+    private fun daysSince(isoDate: String): Long? = runCatching {
+        val d = java.time.LocalDate.parse(isoDate.take(10))
+        java.time.temporal.ChronoUnit.DAYS.between(d, java.time.LocalDate.now())
+    }.getOrNull()
+
+    /**
+     * Keyless "trust signals" derived from the cached recon data — domain age, DNSSEC,
+     * email authentication, HTTPS redirect, registered look-alikes. Deliberately NOT a
+     * single grade. Live malware/phishing blocklists need an API key (no reliable keyless
+     * source exists), so that one is surfaced honestly rather than silently failing.
+     */
+    fun trustSignals(recon: ReconData?): List<SecFinding> {
+        val out = mutableListOf<SecFinding>()
+        if (recon == null) return out
+
+        recon.rdap?.created?.let { created ->
+            daysSince(created)?.let { days ->
+                out += if (days in 0..90)
+                    SecFinding("Newly registered domain", "Registered $days days ago ($created). New domains are disproportionately used for phishing and abuse.", "warn")
+                else
+                    SecFinding("Domain age", "Registered $created.", "ok")
+            }
+        }
+
+        recon.email?.dnssec?.let {
+            out += if (it) SecFinding("DNSSEC enabled", "DNS responses are cryptographically signed.", "ok")
+            else SecFinding("No DNSSEC", "DNS is not signed — responses can be spoofed.", "info")
+        }
+
+        recon.email?.let { e ->
+            if (e.spf != null && e.dmarc != null)
+                out += SecFinding("Email authentication", "SPF and DMARC are both configured.", "ok")
+            else {
+                val miss = listOfNotNull(if (e.spf == null) "SPF" else null, if (e.dmarc == null) "DMARC" else null)
+                out += SecFinding("Weak email authentication", "Missing ${miss.joinToString(" & ")} — mail from this domain is easier to spoof.", "info")
+            }
+        }
+
+        recon.httpsRedirect?.let { if (!it) out += SecFinding("No HTTP→HTTPS redirect", "Plain HTTP does not redirect to HTTPS.", "warn") }
+
+        recon.similarDomains.count { it.registered }.takeIf { it > 0 }?.let {
+            out += SecFinding("Registered look-alike domains", "$it typosquat-style domain(s) are registered — possible phishing infrastructure.", "warn")
+        }
+
+        out += SecFinding("Malware/phishing blocklist", "Not checked — live blocklist lookup (e.g. Safe Browsing / URLhaus) requires an API key. API-key support is planned.", "info")
+
+        return out.sortedBy { SEV_RANK[it.severity] ?: 4 }
     }
 }

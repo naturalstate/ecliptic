@@ -257,13 +257,18 @@ fun generateHtmlReport(
         }
     }
 
-    fun reputationHtml(): String {
-        val rep = recon?.reputation ?: return "<p class='muted'>Not checked</p>"
-        if (rep.error != null) return "<p class='muted'>Check unavailable (${esc(rep.source)})</p>"
-        return if (rep.listed)
-            "<p class='fail'>⚠ Listed on ${esc(rep.source)}${rep.detail?.let { " — ${esc(it)}" } ?: ""}</p>"
-        else
-            "<p class='pass'>✓ No malicious records on ${esc(rep.source)}</p>"
+    fun trustHtml(): String {
+        val signals = SecurityAnalyzer.trustSignals(recon)
+        if (signals.isEmpty()) return "<p class='muted'>Not checked</p>"
+        return buildString {
+            append("<table>")
+            for (f in signals) {
+                val cls = when (f.severity) { "alert" -> "fail"; "warn" -> "warn"; "ok" -> "pass"; else -> "muted" }
+                val mark = when (f.severity) { "alert", "warn" -> "⚠"; "ok" -> "✓"; else -> "ⓘ" }
+                append("<tr><td><span class='$cls'>$mark ${esc(f.title)}</span><br><span class='muted'>${esc(f.detail)}</span></td></tr>")
+            }
+            append("</table>")
+        }
     }
 
     fun subdomainsHtml(): String {
@@ -383,8 +388,8 @@ ${dnsHtml()}
 <h2>DNS / Email Security</h2>
 ${emailSecHtml()}
 
-<h2>Host Reputation</h2>
-${reputationHtml()}
+<h2>Trust Signals</h2>
+${trustHtml()}
 
 <h2>Subdomains (${recon?.subdomains?.size ?: 0})</h2>
 ${subdomainsHtml()}
