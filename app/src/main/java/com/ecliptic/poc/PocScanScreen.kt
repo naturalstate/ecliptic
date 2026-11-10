@@ -2510,7 +2510,7 @@ private fun ReconContent(
         item { Spacer(Modifier.height(8.dp)) }
 
         // ── Trust signals (keyless; derived from recon) ────────────────────────
-        val trust = remember(data) { SecurityAnalyzer.trustSignals(data) }
+        val trust = SecurityAnalyzer.trustSignals(data)
         item { NetSectionHeader("TRUST SIGNALS", null, loading) }
         if (trust.isEmpty()) {
             item { Text(if (loading) "Evaluating…" else "Not checked", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
