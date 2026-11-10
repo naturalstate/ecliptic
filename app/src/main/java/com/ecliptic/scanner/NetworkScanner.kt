@@ -3,6 +3,8 @@ package com.ecliptic.scanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.Request
@@ -230,6 +232,15 @@ data class HostReputation(
 
 data class SimilarDomain(val domain: String, val registered: Boolean)
 
+/** An open TCP port found on the project host, with its likely service. */
+data class PortResult(val port: Int, val service: String)
+
+/** A resolving staging/pre-prod host, tagged by how it was found. */
+data class StagingHost(val host: String, val source: String, val ip: String?)
+
+/** Enumeration depth for staging-host discovery. */
+enum class EnumTier(val label: String, val count: Int) { QUICK("Quick", 10), STANDARD("Standard", 30), DEEP("Deep", 80) }
+
 /**
  * Aggregated recon result for one scan. Produced once by [fetchReconData] and cached
  * in the ViewModel + persisted per snapshot, so reopening the Recon/Network tab or a
@@ -246,10 +257,16 @@ data class ReconData(
     val similarDomains: List<SimilarDomain> = emptyList(),
     val email: EmailSecurity? = null,
     val httpsRedirect: Boolean? = null,   // does http:// redirect to https://? null = unknown
+    // Manual, on-demand enumeration (not part of the auto recon sweep).
+    val openPorts: List<PortResult> = emptyList(),
+    val portsChecked: Boolean = false,     // distinguishes "none open" from "not run"
+    val staging: List<StagingHost> = emptyList(),
+    val stagingChecked: Boolean = false,
     val fetchedAt: Long = 0L,
 ) {
     val isEmpty: Boolean get() = dns == null && rdap == null && files == null && asn == null &&
-        subdomains.isEmpty() && ipNeighbors.isEmpty() && reputation == null && similarDomains.isEmpty()
+        subdomains.isEmpty() && ipNeighbors.isEmpty() && reputation == null && similarDomains.isEmpty() &&
+        !portsChecked && !stagingChecked
 
     /** True only when the reverse-IP lookup actually returned something. */
     val ipChecked: Boolean get() = ipNeighbors.isNotEmpty()
@@ -473,6 +490,125 @@ suspend fun fetchAsn(ip: String): String? = withContext(Dispatchers.IO) {
             if (resp.isSuccessful) resp.body?.string()?.trim()?.take(100) else null
         }
     } catch (_: Exception) { null }
+}
+
+// ── Alt-port probe ──────────────────────────────────────────────────────────
+// Common non-standard web / admin / dev ports. A plain TCP connect tells us the
+// port is open; we don't bang on it beyond the handshake.
+private val PORT_SERVICES: Map<Int, String> = linkedMapOf(
+    81 to "HTTP-alt", 88 to "HTTP/Kerberos", 591 to "HTTP-alt",
+    2082 to "cPanel", 2083 to "cPanel (SSL)", 2086 to "WHM", 2087 to "WHM (SSL)",
+    2095 to "Webmail", 2096 to "Webmail (SSL)",
+    3000 to "Node/Grafana", 4000 to "Dev server", 5000 to "Flask/Dev",
+    7001 to "WebLogic", 8000 to "HTTP-alt", 8008 to "HTTP-alt",
+    8080 to "HTTP-proxy", 8081 to "HTTP-alt", 8088 to "HTTP-alt",
+    8443 to "HTTPS-alt", 8444 to "HTTPS-alt", 8888 to "HTTP-alt",
+    9000 to "PHP-FPM/SonarQube", 9001 to "Supervisor", 9090 to "Prometheus/Admin",
+    9200 to "Elasticsearch", 9443 to "HTTPS-alt", 10000 to "Webmin",
+)
+
+val DEFAULT_SCAN_PORTS: List<Int> = PORT_SERVICES.keys.toList()
+
+/**
+ * Probes the project host for open alt ports via bounded-parallel TCP connects.
+ * Best-effort and short-timeout; a closed/filtered port simply fails the handshake.
+ * Intended for hosts you own or are authorized to test.
+ */
+suspend fun scanPorts(host: String, ports: List<Int> = DEFAULT_SCAN_PORTS): List<PortResult> = coroutineScope {
+    val gate = Semaphore(12)
+    ports.map { port ->
+        async(Dispatchers.IO) {
+            gate.withPermit {
+                val open = runCatching {
+                    java.net.Socket().use { s ->
+                        s.connect(java.net.InetSocketAddress(host, port), 1500)
+                        s.isConnected
+                    }
+                }.getOrDefault(false)
+                if (open) PortResult(port, PORT_SERVICES[port] ?: "unknown") else null
+            }
+        }
+    }.mapNotNull { it.await() }.sortedBy { it.port }
+}
+
+// ── Staging / pre-prod host enumeration ─────────────────────────────────────
+private val STAGING_QUICK = listOf(
+    "staging", "stage", "dev", "test", "uat", "qa", "preview", "beta", "demo", "sandbox",
+)
+private val STAGING_STANDARD = STAGING_QUICK + listOf(
+    "staging1", "staging2", "stage1", "dev1", "dev2", "test1", "test2", "develop",
+    "development", "preprod", "pre-prod", "prod", "www2", "new", "old", "cms",
+    "portal", "release", "next", "canary", "internal",
+)
+private val STAGING_DEEP = STAGING_STANDARD + listOf(
+    "staging3", "stg", "stg1", "stg2", "integration", "int", "sit", "ppe", "edge",
+    "feature", "review", "mirror", "backup", "v2", "beta1", "alpha", "rc", "nightly",
+    "build", "ci", "testing", "qa1", "qa2", "uat1", "uat2", "demo1", "legacy",
+    "newsite", "secure", "admin-dev", "api-dev", "dev-api", "shop-dev", "store-dev",
+    "blog-dev", "docs-dev", "status", "m", "mobile", "origin", "cdn-dev", "static-dev",
+    "app-dev", "client", "partner", "vendor", "temp", "beta-site", "preprod1", "pre",
+)
+
+// Two-level public suffixes we must keep three labels for (e.g. example.co.uk).
+private val TWO_LEVEL_TLDS = setOf(
+    "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "com.au", "net.au", "org.au",
+    "co.nz", "co.jp", "or.jp", "com.br", "com.mx", "co.za", "com.sg", "com.tr",
+)
+
+/** Best-effort registrable domain from a host (handles a few two-level TLDs). */
+fun registrableDomain(host: String): String {
+    val h = host.removePrefix("www.").lowercase().trimEnd('.')
+    val parts = h.split('.')
+    if (parts.size <= 2) return h
+    val last2 = parts.takeLast(2).joinToString(".")
+    val last3 = parts.takeLast(3).joinToString(".")
+    return if (last2 in TWO_LEVEL_TLDS) last3 else last2
+}
+
+/** Provider-specific default staging prefixes, detected from DNS/ASN signals. */
+private fun providerPrefixes(signals: List<String>): List<String> {
+    val blob = signals.joinToString(" ").lowercase()
+    return when {
+        "wpengine" in blob || "wpenginepowered" in blob -> listOf("dev", "staging")
+        "pantheon" in blob                              -> listOf("dev", "test", "live")
+        "kinsta" in blob                                -> listOf("staging")
+        "acquia" in blob                                -> listOf("dev", "test", "stg")
+        "flywheel" in blob || "getflywheel" in blob     -> listOf("staging")
+        "netlify" in blob                               -> listOf("staging", "deploy-preview")
+        "cloudways" in blob                             -> listOf("staging")
+        "platform.sh" in blob || "platformsh" in blob   -> listOf("staging", "master", "dev")
+        else -> emptyList()
+    }
+}
+
+/**
+ * Enumerates likely staging / pre-prod hosts for a domain: provider-default prefixes
+ * (when the host is recognized) plus a tiered common-prefix wordlist, DNS-resolved in
+ * parallel. Returns only candidates that actually resolve. DNS lookups only — no
+ * connection is made to the candidate hosts.
+ */
+suspend fun enumStaging(host: String, dnsSignals: List<String>, tier: EnumTier): List<StagingHost> = coroutineScope {
+    val base = registrableDomain(host)
+    val tierList = when (tier) {
+        EnumTier.QUICK -> STAGING_QUICK
+        EnumTier.STANDARD -> STAGING_STANDARD
+        EnumTier.DEEP -> STAGING_DEEP
+    }
+    // Ordered, de-duplicated prefixes; provider defaults take precedence (and label).
+    val prefixes = LinkedHashMap<String, String>()
+    providerPrefixes(dnsSignals).forEach { prefixes.putIfAbsent(it, "provider") }
+    tierList.forEach { prefixes.putIfAbsent(it, "wordlist") }
+
+    val gate = Semaphore(20)
+    prefixes.entries.map { (prefix, source) ->
+        async(Dispatchers.IO) {
+            gate.withPermit {
+                val cand = "$prefix.$base"
+                val ips = queryDns(cand, 1)
+                if (ips.isNotEmpty()) StagingHost(cand, source, ips.firstOrNull()) else null
+            }
+        }
+    }.mapNotNull { it.await() }
 }
 
 private fun extractEntityName(entity: JSONObject): String? {

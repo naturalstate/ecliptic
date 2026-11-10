@@ -10,9 +10,12 @@ import com.ecliptic.fingerprint.Technology
 import com.ecliptic.scanner.ConsoleMessage
 import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
+import com.ecliptic.scanner.EnumTier
 import com.ecliptic.scanner.ReconData
 import com.ecliptic.scanner.RepeaterResponse
+import com.ecliptic.scanner.enumStaging
 import com.ecliptic.scanner.fetchReconData
+import com.ecliptic.scanner.scanPorts
 import com.ecliptic.scanner.SpiderEngine
 import com.ecliptic.scanner.SpiderState
 import com.ecliptic.scanner.scanUrl
@@ -69,6 +72,9 @@ data class ScanUiState(
     // Recon (WHOIS / DNS / ASN / robots / security.txt / sitemap) — fetched once, cached
     val reconData: ReconData? = null,
     val reconLoading: Boolean = false,
+    // Manual, on-demand enumeration run from the Recon tab
+    val portsLoading: Boolean = false,
+    val stagingLoading: Boolean = false,
 )
 
 class ScanViewModel(application: Application) : AndroidViewModel(application) {
@@ -171,6 +177,102 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 val saveHtml = AppPreferences.saveHtmlSourceFlow(appContext).first()
                 ScanHistoryStore.save(appContext, snapshots[currentSnapshotIdx], saveHtml)
             }
+        }
+    }
+
+    /** Host of the current scan, stripped of www. null if nothing is scanned. */
+    private fun currentHost(): String? {
+        val s = _state.value
+        val raw = (s.signals?.finalUrl?.ifBlank { null } ?: s.urlInput).trim()
+        if (raw.isBlank()) return null
+        val withScheme = if (raw.startsWith("http")) raw else "https://$raw"
+        return runCatching { java.net.URI(withScheme).host?.removePrefix("www.") }.getOrNull()
+    }
+
+    /** Merge a change into the cached recon (creating it if absent) and persist it. */
+    private fun updateReconAndPersist(transform: (ReconData) -> ReconData) {
+        val updated = transform(_state.value.reconData ?: ReconData())
+        _state.update { it.copy(reconData = updated) }
+        if (currentSnapshotIdx in snapshots.indices) {
+            snapshots[currentSnapshotIdx] = snapshots[currentSnapshotIdx].copy(reconData = updated)
+            viewModelScope.launch {
+                val saveHtml = AppPreferences.saveHtmlSourceFlow(appContext).first()
+                ScanHistoryStore.save(appContext, snapshots[currentSnapshotIdx], saveHtml)
+            }
+        }
+    }
+
+    /** Probe the project host for open alt ports (manual; authorized-use feature). */
+    fun scanPorts() {
+        if (_state.value.portsLoading) return
+        val host = currentHost() ?: return
+        _state.update { it.copy(portsLoading = true) }
+        viewModelScope.launch {
+            val ports = runCatching { scanPorts(host) }.getOrDefault(emptyList())
+            updateReconAndPersist { it.copy(openPorts = ports, portsChecked = true) }
+            _state.update { it.copy(portsLoading = false) }
+        }
+    }
+
+    /** Enumerate staging/pre-prod hosts at the chosen depth (manual). */
+    fun enumStaging(tier: EnumTier) {
+        if (_state.value.stagingLoading) return
+        val host = currentHost() ?: return
+        // Feed provider detection with whatever DNS/ASN signals we already have cached.
+        val recon = _state.value.reconData
+        val signals = buildList {
+            recon?.dns?.cnameRecords?.let { addAll(it) }
+            recon?.dns?.nsRecords?.let { addAll(it) }
+            recon?.asn?.let { add(it) }
+        }
+        _state.update { it.copy(stagingLoading = true) }
+        viewModelScope.launch {
+            val hosts = runCatching { enumStaging(host, signals, tier) }.getOrDefault(emptyList())
+            updateReconAndPersist { it.copy(staging = hosts, stagingChecked = true) }
+            _state.update { it.copy(stagingLoading = false) }
+        }
+    }
+
+    /** Permanently delete the scan currently in view, then show an adjacent one. */
+    fun deleteCurrentScan() {
+        if (currentSnapshotIdx !in snapshots.indices) return
+        val removed = snapshots.removeAt(currentSnapshotIdx)
+        viewModelScope.launch { ScanHistoryStore.delete(appContext, removed.timestamp) }
+        spider.reset()
+        if (snapshots.isEmpty()) {
+            currentSnapshotIdx = -1
+            _state.update {
+                it.copy(
+                    urlInput = "", hasScanned = false,
+                    signals = null, techs = emptyList(),
+                    liveNetworkRequests = emptyList(), consoleMessages = emptyList(),
+                    rawRequest = "", wizardUrl = "", wizardHeaders = emptyList(),
+                    reconData = null, reconLoading = false,
+                    portsLoading = false, stagingLoading = false,
+                    historySize = 0, historyPosition = 0,
+                )
+            }
+            return
+        }
+        currentSnapshotIdx = currentSnapshotIdx.coerceAtMost(snapshots.lastIndex)
+        val snap = snapshots[currentSnapshotIdx]
+        _state.update {
+            it.copy(
+                urlInput = snap.url,
+                signals = snap.signals,
+                techs = snap.techs,
+                liveNetworkRequests = snap.networkRequests,
+                consoleMessages = snap.consoleMessages,
+                rawRequest = snap.rawRequest,
+                wizardUrl = snap.wizardUrl,
+                wizardHeaders = snap.wizardHeaders,
+                hasScanned = true,
+                historySize = snapshots.size,
+                historyPosition = currentSnapshotIdx + 1,
+                reconData = snap.reconData,
+                reconLoading = false,
+                portsLoading = false, stagingLoading = false,
+            )
         }
     }
 

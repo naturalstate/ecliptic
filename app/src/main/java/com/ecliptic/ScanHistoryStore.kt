@@ -8,11 +8,13 @@ import com.ecliptic.scanner.DnsResult
 import com.ecliptic.scanner.EmailSecurity
 import com.ecliptic.scanner.HostReputation
 import com.ecliptic.scanner.NetworkRequest
+import com.ecliptic.scanner.PortResult
 import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RdapResult
 import com.ecliptic.scanner.ReconData
 import com.ecliptic.scanner.ReconFiles
 import com.ecliptic.scanner.SimilarDomain
+import com.ecliptic.scanner.StagingHost
 import com.ecliptic.scanner.TlsResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -42,6 +44,11 @@ object ScanHistoryStore {
             ?.sortedBy { it.nameWithoutExtension.toLongOrNull() ?: 0L }
             ?: return@withContext emptyList()
         files.mapNotNull { runCatching { JSONObject(it.readText()).toScanSnapshot() }.getOrNull() }
+    }
+
+    /** Permanently removes one scan's persisted file. No-op if it's already gone. */
+    suspend fun delete(context: Context, timestamp: Long) = withContext(Dispatchers.IO) {
+        runCatching { File(dir(context), "$timestamp.json").delete() }
     }
 
     private fun pruneOld(context: Context) {
@@ -273,6 +280,18 @@ private fun ReconData.toJson() = JSONObject().apply {
     })
     email?.let { put("email", it.toJson()) }
     httpsRedirect?.let { put("httpsRedirect", it) }
+    if (portsChecked) {
+        put("portsChecked", true)
+        put("openPorts", JSONArray().also { arr ->
+            openPorts.forEach { p -> arr.put(JSONObject().put("port", p.port).put("service", p.service)) }
+        })
+    }
+    if (stagingChecked) {
+        put("stagingChecked", true)
+        put("staging", JSONArray().also { arr ->
+            staging.forEach { s -> arr.put(JSONObject().put("host", s.host).put("source", s.source).apply { s.ip?.let { put("ip", it) } }) }
+        })
+    }
     put("fetchedAt", fetchedAt)
 }
 
@@ -291,6 +310,18 @@ private fun JSONObject.toReconData() = ReconData(
     } ?: emptyList(),
     email = optJSONObject("email")?.toEmailSecurity(),
     httpsRedirect = if (has("httpsRedirect")) optBoolean("httpsRedirect") else null,
+    openPorts = optJSONArray("openPorts")?.let { arr ->
+        (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { PortResult(it.optInt("port"), it.optString("service")) }
+        }
+    } ?: emptyList(),
+    portsChecked = optBoolean("portsChecked", false),
+    staging = optJSONArray("staging")?.let { arr ->
+        (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { StagingHost(it.optString("host"), it.optString("source"), it.optString("ip").ifBlank { null }) }
+        }
+    } ?: emptyList(),
+    stagingChecked = optBoolean("stagingChecked", false),
     fetchedAt = optLong("fetchedAt", 0L),
 )
 

@@ -297,6 +297,25 @@ fun generateHtmlReport(
             sims.joinToString("") { "<tr><td class='mono'>${esc(it.domain)}</td></tr>" } + "</table>"
     }
 
+    fun portsHtml(): String {
+        val r = recon ?: return "<p class='muted'>Not checked</p>"
+        if (!r.portsChecked) return "<p class='muted'>Not checked</p>"
+        if (r.openPorts.isEmpty()) return "<p class='pass'>No open alt ports found</p>"
+        return "<table><tr><th>Port</th><th>Likely service</th></tr>" +
+            r.openPorts.joinToString("") { "<tr><td class='mono'>${it.port}</td><td>${esc(it.service)}</td></tr>" } + "</table>"
+    }
+
+    fun stagingHtml(): String {
+        val r = recon ?: return "<p class='muted'>Not checked</p>"
+        if (!r.stagingChecked) return "<p class='muted'>Not checked</p>"
+        if (r.staging.isEmpty()) return "<p class='muted'>No staging hosts resolved</p>"
+        return "<table><tr><th>Host</th><th>Source</th><th>IP</th></tr>" +
+            r.staging.joinToString("") {
+                val src = if (it.source == "provider") "host default" else "wordlist"
+                "<tr><td class='mono'>${esc(it.host)}</td><td>${src}</td><td class='mono'>${esc(it.ip ?: "—")}</td></tr>"
+            } + "</table>"
+    }
+
     fun reconFileHtml(label: String, txt: String?): String {
         if (txt.isNullOrBlank()) return "<p class='muted'>$label not found</p>"
         return "<pre class='code'>${esc(txt.take(20_000))}</pre>"
@@ -399,6 +418,12 @@ ${neighborsHtml()}
 
 <h2>Similar Domains</h2>
 ${similarDomainsHtml()}
+
+<h2>Alt Ports${(recon?.openPorts?.size ?: 0).let { if (it > 0) " ($it open)" else "" }}</h2>
+${portsHtml()}
+
+<h2>Staging Hosts${(recon?.staging?.size ?: 0).let { if (it > 0) " ($it)" else "" }}</h2>
+${stagingHtml()}
 
 <h2>TLS / Certificate</h2>
 ${tlsHtml()}

@@ -112,6 +112,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -174,8 +175,11 @@ import com.ecliptic.scanner.DetectedApi
 import com.ecliptic.scanner.NetworkRequest
 import com.ecliptic.scanner.RawSignals
 import com.ecliptic.scanner.RdapResult
+import com.ecliptic.scanner.EnumTier
+import com.ecliptic.scanner.PortResult
 import com.ecliptic.scanner.ReconData
 import com.ecliptic.scanner.SecurityAnalyzer
+import com.ecliptic.scanner.StagingHost
 import com.ecliptic.scanner.ReconFiles
 import com.ecliptic.scanner.Extractor
 import com.ecliptic.scanner.RepeaterResponse
@@ -196,6 +200,7 @@ import com.ecliptic.ui.theme.Blue
 import com.ecliptic.ui.theme.Green
 import com.ecliptic.ui.theme.Navy
 import com.ecliptic.ui.theme.NavyLight
+import com.ecliptic.ui.theme.Amber
 import com.ecliptic.ui.theme.Red
 import com.ecliptic.ui.theme.SpaceGrotesk
 import com.ecliptic.ui.theme.Teal
@@ -381,6 +386,7 @@ fun PocScanScreen(
     var codeSubTab   by remember { mutableIntStateOf(0) }   // 0=SOURCE 1=JS 2=DOM 3=NET 4=CONSOLE
     var showSettings by remember { mutableStateOf(false) }
     var showShareSheet by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     // Deep-scan JS results for the Strings tab, hoisted here (keyed per scan) so they
     // survive switching between Code subtabs, which disposes the subtab content.
     var stringsDeepText by remember(signals?.finalUrl) { mutableStateOf("") }
@@ -564,6 +570,9 @@ fun PocScanScreen(
                         IconButton(onClick = { showShareSheet = true; viewModel.loadRecon() }, modifier = Modifier.size(40.dp)) {
                             Icon(Icons.Filled.Share, "Export report", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
+                        IconButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Filled.Delete, "Delete this scan", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        }
                         IconButton(onClick = { viewModel.onNewScan(); bottomTab = TAB_TECH }, modifier = Modifier.size(40.dp)) {
                             Icon(Icons.Filled.Add, "New scan", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
@@ -706,6 +715,10 @@ fun PocScanScreen(
                         loading = state.reconLoading,
                         onLoad = { viewModel.loadRecon() },
                         onRefresh = { viewModel.loadRecon(force = true) },
+                        portsLoading = state.portsLoading,
+                        stagingLoading = state.stagingLoading,
+                        onScanPorts = { viewModel.scanPorts() },
+                        onEnumStaging = { tier -> viewModel.enumStaging(tier) },
                     )
                     "intel_5" -> SelectionContainer { ParamContent(html = signals?.htmlSource ?: "") }
                     "intel_6" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput, onSendToRepeater = { viewModel.prefillRepeater(it); bottomTab = TAB_REPEAT })
@@ -753,6 +766,35 @@ fun PocScanScreen(
                 }
             }
         }
+    }
+
+    if (showDeleteConfirm) {
+        val delHost = remember(signals?.finalUrl, urlInput) {
+            val raw = signals?.finalUrl?.takeIf { it.isNotBlank() } ?: urlInput
+            runCatching { java.net.URI(if (raw.startsWith("http")) raw else "https://$raw").host.orEmpty() }.getOrDefault(raw)
+        }
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            icon = { Icon(Icons.Filled.Delete, null, tint = Red) },
+            title = { Text("Delete this scan?", fontFamily = SpaceGrotesk) },
+            text = {
+                Text(
+                    "Permanently removes the saved scan for ${delHost.ifBlank { "this site" }} from this device. This can't be undone.",
+                    fontSize = 13.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showDeleteConfirm = false; viewModel.deleteCurrentScan() }) {
+                    Text("Delete", color = Red, fontFamily = SpaceGrotesk)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+        )
     }
 
     if (showSettings) {
@@ -2359,6 +2401,10 @@ private fun ReconContent(
     loading: Boolean,
     onLoad: () -> Unit,
     onRefresh: () -> Unit,
+    portsLoading: Boolean,
+    stagingLoading: Boolean,
+    onScanPorts: () -> Unit,
+    onEnumStaging: (EnumTier) -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val domain = remember(url) {
@@ -2516,6 +2562,98 @@ private fun ReconContent(
                         SecCheckRow("CAA", em.caa.isNotEmpty(), if (em.caa.isNotEmpty()) em.caa.joinToString("\n") else "No CAA records")
                         data?.httpsRedirect?.let { r ->
                             SecCheckRow("HTTP→HTTPS", r, if (r) "Redirects to HTTPS" else "Does NOT redirect to HTTPS")
+                        }
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+
+        // ── Alt ports (manual TCP probe) ───────────────────────────────────────
+        item { NetSectionHeader("ALT PORTS", null, portsLoading) }
+        item {
+            val ports = data?.openPorts ?: emptyList()
+            val checked = data?.portsChecked == true
+            Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    when {
+                        portsLoading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Teal, strokeWidth = 2.dp)
+                            Text("Probing ${com.ecliptic.scanner.DEFAULT_SCAN_PORTS.size} common ports…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        }
+                        checked && ports.isEmpty() -> Text("No open alt ports found.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        checked -> ports.forEach { p ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(":${p.port}", color = Teal, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+                                Text(p.service, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                Text("open", color = Teal, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                        else -> Text(
+                            "Probes the project host for services on common non-standard ports (8000, 8443, 9000…). Only run against hosts you own or are authorized to test.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
+                        )
+                    }
+                    if (!portsLoading) {
+                        Button(
+                            onClick = onScanPorts,
+                            colors = ButtonDefaults.buttonColors(containerColor = Teal.copy(alpha = 0.14f), contentColor = Teal),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        ) {
+                            Icon(Icons.Filled.WifiTethering, null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(7.dp))
+                            Text(if (checked) "Rescan ports" else "Scan common ports", fontSize = 12.sp, fontFamily = SpaceGrotesk)
+                        }
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+
+        // ── Staging / pre-prod host enumeration (manual, tiered) ───────────────
+        item { NetSectionHeader("STAGING HOSTS", null, stagingLoading) }
+        item {
+            val hosts = data?.staging ?: emptyList()
+            val checked = data?.stagingChecked == true
+            Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Resolves common staging/pre-prod names (staging.…, dev.…, uat.…) plus known-host defaults. DNS lookups only. Pick a depth:",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        EnumTier.entries.forEach { tier ->
+                            Surface(
+                                onClick = { if (!stagingLoading) onEnumStaging(tier) },
+                                enabled = !stagingLoading,
+                                shape = RoundedCornerShape(8.dp),
+                                color = Teal.copy(alpha = 0.10f),
+                                border = BorderStroke(1.dp, Teal.copy(alpha = 0.5f)),
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(tier.label, color = Teal, fontSize = 12.sp, fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold)
+                                    Text("~${tier.count}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                                }
+                            }
+                        }
+                    }
+                    when {
+                        stagingLoading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Teal, strokeWidth = 2.dp)
+                            Text("Enumerating…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        }
+                        checked && hosts.isEmpty() -> Text("No staging hosts resolved.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        checked -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            hosts.forEach { h ->
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(h.host, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                    if (h.source == "provider") {
+                                        Text("default", color = Amber, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                                    }
+                                    h.ip?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace) }
+                                }
+                            }
                         }
                     }
                 }
