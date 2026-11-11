@@ -12,6 +12,7 @@
 </p>
 
 <p align="center">
+  <a href="https://naturalstate.github.io/ecliptic/"><b>🌐 Website</b></a> &nbsp;&middot;&nbsp;
   <a href="#features-at-a-glance"><b>Features</b></a> &nbsp;&middot;&nbsp;
   <a href="#screenshots"><b>Screenshots</b></a> &nbsp;&middot;&nbsp;
   <a href="#how-the-scan-works"><b>How it works</b></a> &nbsp;&middot;&nbsp;
@@ -27,7 +28,7 @@
 
 Ecliptic is a native Android app that gives you instant, deep intelligence on any website. Point it at a URL — or share directly from Chrome — and it fingerprints the entire tech stack using three independent analysis layers: live HTTP headers, HTML source analysis, and JavaScript runtime probing via a real Chromium engine (Android WebView).
 
-Think of it as a pocket-sized combination of Wappalyzer, a security-header auditor, an HTTP repeater, a site spider, and a DNS/WHOIS lookup tool — with everything running entirely on your device. No account, no backend, no telemetry.
+Think of it as a pocket-sized combination of Wappalyzer, a security-header analyzer, an HTTP repeater, a site spider, and a full OSINT/recon suite — DNS & email-security posture, subdomains, hosting and IP neighbors, look-alike domains, alt-port and staging-host discovery — with everything running entirely on your device. No account, no backend, no telemetry.
 
 ---
 
@@ -48,7 +49,13 @@ Think of it as a pocket-sized combination of Wappalyzer, a security-header audit
 
 ```
 🔍  Technology fingerprinting    →  1,500+ technologies, 30+ categories
-🛡️  Security header audit        →  10 headers scored, full values shown
+🛡️  Security header analysis     →  pass/fail + depth: CSP, CORS, SRI, HSTS, clickjacking
+📧  DNS & email security         →  SPF, DMARC, DKIM, DNSSEC, CAA, HTTPS enforcement
+🔑  Trust signals                →  domain age, DNSSEC, HTTPS, email auth, look-alikes
+🌍  Subdomains                   →  certificate-transparency enumeration (crt.sh)
+🖧  Hosting & IP intel           →  ASN, reverse-IP neighbors, dedicated vs shared
+🚪  Alt-port probe               →  common non-standard web/admin/dev ports
+🧪  Staging-host enumeration     →  tiered wordlists + provider defaults (DNS-resolved)
 🍪  Deep cookie inspection       →  HttpOnly, Secure, SameSite, expiry, domain
 ⚡  API detection                →  REST, GraphQL, SOAP, gRPC, JSON-RPC, OpenAPI, WebSocket
 🕸️  Spider                       →  Crawl a site into a page map (sitemap + link following)
@@ -58,7 +65,7 @@ Think of it as a pocket-sized combination of Wappalyzer, a security-header audit
 🔁  HTTP Repeater                →  RAW and wizard modes, fullscreen response
 👁️  Source viewer                →  HTML, JS globals, DOM tree, live network, console
 📤  Chrome Share integration     →  Share any URL from Chrome → instant scan
-🕑  Scan history                 →  Up to 50 scans, persistent, ← → navigation
+🕑  Scan history                 →  Up to 50 scans, persistent, ← → navigation, delete
 📋  Copy anywhere                →  Long-press any value, or bulk-copy a tab
 📊  HTML report export           →  Full scan exported as a shareable HTML file
 ```
@@ -107,6 +114,51 @@ Dedicated audit tab scoring 10 critical security headers:
 
 Present headers shown in full with their values. Missing headers flagged in red.
 
+**Security-depth analysis (ANALYSIS section).** Beyond present/absent, the SEC HEADERS tab runs a static analyzer that flags *weak* configurations, each with the offending value and a severity (alert / warn / ok / info):
+
+- **Clickjacking** — missing/weak `X-Frame-Options` and absent `frame-ancestors` in CSP
+- **CSP quality** — `unsafe-inline`, `unsafe-eval`, wildcard sources
+- **CORS misconfiguration** — wildcard `Access-Control-Allow-Origin`, and the dangerous `*` + credentials combination (flagged alert)
+- **SRI** — third-party `<script>` / `<link>` loaded without a Subresource Integrity hash
+- **HSTS** — `max-age`, `includeSubDomains`, `preload` completeness
+- **Mixed content** and **information disclosure** (`X-Powered-By`, versioned `Server`)
+
+No vanity letter grade — findings are reported straight, with the raw evidence.
+
+---
+
+### 📧 DNS & Email Security
+
+Checks the DNS records that decide whether a domain can be spoofed — shown as clear pass/fail with the raw record values:
+
+| Check | What it verifies |
+|---|---|
+| **SPF** | Sender Policy Framework TXT record |
+| **DMARC** | `_dmarc` policy (`p=none/quarantine/reject`) |
+| **DKIM** | Common selectors probed for a signing key |
+| **DNSSEC** | Zone signed (DNSKEY present) |
+| **CAA** | Certificate Authority Authorization records |
+| **HTTP → HTTPS** | Whether `http://` is redirected to `https://` |
+
+### 🔑 Trust Signals
+
+Keyless reputation context (no API key required): domain age from registration data, DNSSEC, enforced HTTPS, email authentication, and **registered look-alike / typosquat domains** that could impersonate the target. Blocklist status is shown honestly as "needs an API key" rather than failing silently.
+
+### 🌍 Subdomains, Hosting & Look-alikes
+
+- **Subdomains** — enumerated from certificate-transparency logs (crt.sh)
+- **IP neighbors** — reverse-IP lookup of other sites sharing the host, flagging **dedicated vs shared** hosting
+- **Similar domains** — generated typosquats (TLD swaps, omissions, transpositions, homoglyphs) filtered to the ones that actually resolve
+
+### 🚪 Alt-Port Probe & 🧪 Staging Enumeration
+
+On-demand (manual) recon run from the Recon tab — intended for hosts you own or are authorized to test:
+
+- **Alt ports** — bounded-parallel TCP probe of ~26 common non-standard web/admin/dev ports (8000, 8443, 8444, 9000, 8080, cPanel/WHM, Webmin, Elasticsearch…), reporting open ports and their likely service
+- **Staging hosts** — tiered enumeration (**Quick ~10 / Standard ~30 / Deep ~80**) of common staging/pre-prod prefixes (`staging.`, `dev.`, `uat.`…), DNS-resolved in parallel; recognized hosts (WP Engine, Pantheon, Kinsta, Acquia, Flywheel, Netlify, Cloudways, Platform.sh) also get their **provider-default** staging patterns injected
+
+Both results are cached per scan, persist across restarts, and are included in the exported HTML report.
+
 ---
 
 ### ⚡ API Detection
@@ -152,8 +204,14 @@ Crawl a site into a map of its pages, right from the Intel tab — to the right 
 
 ### 🤖 Recon Tab
 
+The Recon sub-tab aggregates everything OSINT in one place (auto-loaded once per scan, cached, with a manual refresh):
+
 - **Wayback Machine** — Direct link to archive.org history for the scanned URL
 - **WHOIS / RDAP** — Registrar, registrant, creation/expiry/updated dates, domain status, name servers
+- **DNS & email security** — SPF, DMARC, DKIM, DNSSEC, CAA, HTTP→HTTPS (see above)
+- **Alt ports** — manual TCP probe of common non-standard ports
+- **Staging hosts** — manual tiered enumeration + provider defaults
+- **Subdomains / IP neighbors / Similar domains** — surfaced here and in the report
 - **robots.txt** — Fetched live, collapsible full view
 - **security.txt** — Fetched from `/.well-known/security.txt` and `/security.txt`
 - **sitemap** — Discovered via `robots.txt` and common paths (`/sitemap.xml`, `/sitemap_index.xml`, `/sitemaps.xml`, `/wp-sitemap.xml`)
@@ -199,8 +257,9 @@ Full `Set-Cookie` header parsing — not just name/value:
 Every scan is automatically saved to device storage and survives app restarts.
 
 - **Persistent storage** — up to 50 scans saved as JSON files in internal storage (auto-pruned oldest)
-- **← → navigation** — arrows appear in the header once you have multiple scans; tap to browse previous results
-- **Full fidelity** — saved scans restore tech list, headers, cookies, TLS, APIs, and network requests
+- **← → navigation** — arrows appear in the header once you have multiple scans; tap to browse previous results (press-and-hold to fast-advance)
+- **Delete a scan** — trash icon in the header removes the scan in view (with a confirm), from memory and disk
+- **Full fidelity** — saved scans restore tech list, headers, cookies, TLS, APIs, recon (DNS/WHOIS/security/subdomains/ports/staging), and network requests
 - **Save HTML source** — optional setting (off by default) to also persist raw HTML (~500 KB extra per scan)
 
 ---
@@ -324,17 +383,32 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 2. Tap **Start** — Ecliptic seeds from the sitemap (if any) and follows links
 3. Pause/Stop anytime; tap copy to export the URL list
 
+**Recon & enumeration**
+1. Open **INTEL → RECON** — DNS/email security, WHOIS, subdomains and hosting load automatically
+2. Tap **Scan common ports** to probe alt ports, or pick a **staging** depth (Quick / Standard / Deep) to enumerate pre-prod hosts
+3. Only run port/staging enumeration against hosts you own or are authorized to test
+
+> The INTEL sub-tabs are: **HEADERS · SEC HEADERS · COOKIES · APIS · RECON · PARAM · SPIDER · NETWORK · REQ/RES**. Use the header trash icon to delete the scan in view.
+
 ---
 
 ## Roadmap
 
-- [x] Scan history — persistent across sessions with ← → navigation
+- [x] Scan history — persistent across sessions with ← → navigation, delete
 - [x] Export scan report — full HTML report via share sheet
 - [x] Copy — long-press any value plus per-tab bulk copy
 - [x] Spider — crawl a site into a page map
 - [x] WebSocket detection (API tab)
+- [x] Security-depth analysis — CSP / CORS / SRI / HSTS / clickjacking
+- [x] DNS & email security — SPF / DMARC / DKIM / DNSSEC / CAA
+- [x] Trust signals — domain age, DNSSEC, HTTPS, email auth, look-alikes
+- [x] Subdomains, IP neighbors & hosting intel
+- [x] Alt-port probe & staging-host enumeration
+- [ ] Active subdomain brute-force — bundled SecLists wordlists, start/pause/stop
+- [ ] Authorized-use acknowledgement gate (pre-Play)
 - [ ] Authenticated scans — cookie / token / interactive login
 - [ ] Scan comparison — diff two saved scans side-by-side
+- [ ] Favicon hash (Shodan-style) identification
 - [ ] Server-Sent Events (SSE) detection
 - [ ] Service Worker / PWA detection
 - [ ] Auth mechanism hints (JWT, OAuth, OIDC)
