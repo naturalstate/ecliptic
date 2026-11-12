@@ -208,6 +208,10 @@ import com.ecliptic.ui.theme.categoryAccentColor
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.ecliptic.R
 import kotlinx.coroutines.withTimeoutOrNull
 
 // Bottom nav indices
@@ -511,11 +515,10 @@ fun PocScanScreen(
                 // pushing the history arrows/actions on the right out of position.
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .graphicsLayer(rotationZ = 45f)
-                                .background(Teal, RoundedCornerShape(1.5.dp))
+                        Image(
+                            painter = painterResource(R.drawable.ic_logo_mark),
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
                         )
                         Text(
                             text = "ECLIPTIC",
@@ -530,9 +533,10 @@ fun PocScanScreen(
                             ),
                         )
                     }
-                    // Pinned project host — always visible so you know which scan
-                    // you're viewing, even on Intel/Code/Repeat while arrowing history.
-                    if (hasScanned) {
+                    // Pinned project host — shown here on Intel/Code/Repeat (where there's
+                    // no scan bar). On the Tech page the host lives in its own row below the
+                    // scan bar, next to the project actions, so the header stays uncluttered.
+                    if (hasScanned && bottomTab != TAB_TECH) {
                         val projectHost = remember(signals?.finalUrl, urlInput) {
                             val raw = signals?.finalUrl?.takeIf { it.isNotBlank() } ?: urlInput
                             runCatching {
@@ -569,13 +573,9 @@ fun PocScanScreen(
                             viewModel.navigateHistory(1)
                         }
                     }
+                    // App-general actions only up here (New scan, Settings). The
+                    // project-specific Share / Delete live in the project row on the Tech page.
                     if (hasScanned && !scanning) {
-                        IconButton(onClick = { showShareSheet = true; viewModel.loadRecon() }, modifier = Modifier.size(40.dp)) {
-                            Icon(Icons.Filled.Share, "Export report", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                        }
-                        IconButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.size(40.dp)) {
-                            Icon(Icons.Filled.Delete, "Delete this scan", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                        }
                         IconButton(onClick = { viewModel.onNewScan(); bottomTab = TAB_TECH }, modifier = Modifier.size(40.dp)) {
                             Icon(Icons.Filled.Add, "New scan", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
@@ -623,6 +623,41 @@ fun PocScanScreen(
                         onPaste = { paste() },
                         onScan = { editingUrl = false; scan() },
                     )
+                }
+            }
+        }
+
+        // ── Project row (Tech page): host + project-specific actions ──────────
+        // Share and Delete act on the current scan, so they live with the host here
+        // rather than crowding the app header.
+        if (!isFullScreen && hasScanned && !scanning && bottomTab == TAB_TECH) {
+            val projectHost = remember(signals?.finalUrl, urlInput) {
+                val raw = signals?.finalUrl?.takeIf { it.isNotBlank() } ?: urlInput
+                runCatching {
+                    val withScheme = if (raw.startsWith("http")) raw else "https://$raw"
+                    java.net.URI(withScheme).host.orEmpty()
+                }.getOrDefault("")
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = projectHost.ifBlank { urlInput },
+                    color = Teal,
+                    fontSize = 13.sp,
+                    fontFamily = SpaceGrotesk,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.02.em,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = { showShareSheet = true; viewModel.loadRecon() }, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Filled.Share, "Export report", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Filled.Delete, "Delete this scan", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 }
             }
         }

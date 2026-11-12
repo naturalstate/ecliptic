@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ecliptic wordmark glyph: the launcher icon's crescent, tightened to fill a small
+     header mark. One evenOdd crescent (disc minus an upper-right bite) + the scan dot.
+     The bite is transparent so the header background shows through, matching the app icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M16,16 m-13,0 a13,13 0 1,0 26,0 a13,13 0 1,0 -26,0 M22.5,10.4 m-11.14,0 a11.14,11.14 0 1,0 22.28,0 a11.14,11.14 0 1,0 -22.28,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="5" android:startY="7"
+                android:endX="27" android:endY="26">
+                <item android:offset="0.0" android:color="#FF3BEBC9" />
+                <item android:offset="1.0" android:color="#FF10B981" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:fillColor="#FF00E5C8"
+        android:pathData="M27.1,5.8 m-2.34,0 a2.34,2.34 0 1,0 4.68,0 a2.34,2.34 0 1,0 -4.68,0" />
+
+</vector>

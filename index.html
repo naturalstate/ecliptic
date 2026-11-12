@@ -273,14 +273,14 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <linearGradient id="ec-g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2FE3C0"/><stop offset="1" stop-color="#10B981"/>
+      <stop offset="0" stop-color="#3BEBC9"/><stop offset="1" stop-color="#10B981"/>
     </linearGradient>
+    <!-- Matches the Android launcher icon exactly: one evenodd crescent (disc with an
+         upper-right bite that shows the dark background through) plus the scan dot. -->
     <g id="ec-mark">
-      <!-- eclipse: bright disc eclipsed by dark disc, leaving a crescent -->
-      <circle cx="13" cy="13" r="11" fill="url(#ec-g)"/>
-      <circle cx="16.4" cy="11" r="9.1" fill="#0A0A0A"/>
-      <!-- scan dot -->
-      <circle cx="20.2" cy="6.4" r="2.1" fill="#00E5C8"/>
+      <path fill-rule="evenodd" fill="url(#ec-g)"
+            d="M13,13 m-10.5,0 a10.5,10.5 0 1,0 21,0 a10.5,10.5 0 1,0 -21,0 M18.25,8.5 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0"/>
+      <circle cx="22" cy="4.75" r="1.9" fill="#00E5C8"/>
     </g>
   </defs>
 </svg>
@@ -303,10 +303,10 @@
 <!-- Hero -->
 <section class="hero">
   <div class="hero-left reveal">
-    <div class="hero-badge">v1.1.4 · Free · No account</div>
+    <div class="hero-badge">v1.1.8 · build 40 · Free</div>
     <h1>Fingerprint any website <span class="grad">from your phone.</span></h1>
     <p class="hero-desc">
-      Point Ecliptic at any URL and it detects the full stack — CMS, frameworks, analytics, CDN, APIs — then goes deeper: security-header analysis, subdomains, DNS &amp; email security, hosting intel and 1,500+ patterns. A real browser engine, entirely on-device. No account, no backend, no telemetry.
+      Point Ecliptic at any URL and it detects the full stack: CMS, frameworks, analytics, CDN, APIs, then goes deeper into security-header analysis, subdomains, DNS &amp; email security, hosting intel and 1,500+ patterns. A real browser engine, entirely on-device. No account, no backend, no telemetry.
     </p>
     <div class="cta-group">
       <a class="btn-play" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank" rel="noopener">
@@ -411,33 +411,33 @@
 <section class="section" id="features">
   <div class="section-label reveal">// capabilities</div>
   <h2 class="section-title reveal">A recon suite in your pocket.</h2>
-  <p class="section-sub reveal">Nine tools, one scan — from deep fingerprinting to adversarial security analysis. Everything runs in an embedded Chromium engine on your device.</p>
+  <p class="section-sub reveal">Nine tools, one scan, from deep fingerprinting to adversarial security analysis. Everything runs in an embedded Chromium engine on your device.</p>
   <div class="features">
 
     <div class="feature-card reveal">
       <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0-7 17"/><path d="M12 6a6 6 0 0 0-5 9.3"/><path d="M12 10a2 2 0 0 0-1.4 3.4"/><path d="M12 14v8"/></svg></div>
       <div class="feature-title">Deep fingerprinting</div>
-      <div class="feature-desc">Matches HTTP headers, HTML source, JavaScript globals, DOM structure and CSS variables against 1,500+ technology patterns — with corroborated framework detection, so no false React/Svelte hits. Brand icons for every match.</div>
+      <div class="feature-desc">Matches HTTP headers, HTML source, JavaScript globals, DOM structure and CSS variables against 1,500+ technology patterns, with corroborated framework detection. Brand icons for every match.</div>
     </div>
 
     <div class="feature-card reveal">
       <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
       <div class="feature-title">Security-depth analysis</div>
-      <div class="feature-desc">Beyond pass/fail: flags clickjacking exposure, weak CSP (unsafe-inline / wildcards), CORS misconfig, missing SRI on third-party scripts, HSTS gaps, mixed content and info disclosure — each with the offending value.</div>
+      <div class="feature-desc">Beyond pass/fail, it flags clickjacking exposure, weak CSP (unsafe-inline, wildcards), CORS misconfig, missing SRI on third-party scripts, HSTS gaps, mixed content and info disclosure, each with the offending value.</div>
       <span class="feature-tag">new</span>
     </div>
 
     <div class="feature-card reveal">
       <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/><path d="M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></div>
       <div class="feature-title">Subdomain intel</div>
-      <div class="feature-desc">Maps a domain's attack surface from certificate-transparency logs and the live project — passively, as part of every scan. Active enumeration against bundled wordlists is on the roadmap.</div>
+      <div class="feature-desc">Maps a domain's attack surface from certificate-transparency logs and the live project, passively, as part of every scan. Active enumeration against bundled wordlists is on the roadmap.</div>
       <span class="feature-tag">new</span>
     </div>
 
     <div class="feature-card reveal">
       <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg></div>
       <div class="feature-title">DNS &amp; email security</div>
-      <div class="feature-desc">Checks SPF, DMARC, DKIM, DNSSEC and CAA — the records that decide whether a domain can be spoofed. Clear pass/fail with the raw record values, no vanity grade.</div>
+      <div class="feature-desc">Checks SPF, DMARC, DKIM, DNSSEC and CAA, the records that decide whether a domain can be spoofed. Clear pass/fail with the raw record values, no vanity grade.</div>
       <span class="feature-tag">new</span>
     </div>
 
@@ -451,38 +451,38 @@
     <div class="feature-card reveal">
       <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><line x1="6" y1="7" x2="6.01" y2="7"/><line x1="6" y1="17" x2="6.01" y2="17"/></svg></div>
       <div class="feature-title">Hosting &amp; IP intel</div>
-      <div class="feature-desc">Resolves the server IP, ASN and network, and reverse-IP neighbors sharing the host — flagging dedicated vs shared hosting, with WHOIS/RDAP and TLS certificate detail alongside.</div>
+      <div class="feature-desc">Resolves the server IP, ASN and network, and reverse-IP neighbors sharing the host, flagging dedicated vs shared hosting, with WHOIS/RDAP and TLS certificate detail alongside.</div>
       <span class="feature-tag">new</span>
     </div>
 
     <div class="feature-card reveal">
       <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><path d="M5 5l3 3M16 16l3 3M19 5l-3 3M8 16l-3 3"/></svg></div>
       <div class="feature-title">Spider</div>
-      <div class="feature-desc">Crawl a site into a page map — seeded from its sitemap and robots.txt, following links where needed. Same-site, polite, with start/pause/stop and copy-all.</div>
+      <div class="feature-desc">Crawl a site into a page map, seeded from its sitemap and robots.txt, following links where needed. Same-site, polite, with start/pause/stop and copy-all.</div>
     </div>
 
     <div class="feature-card reveal">
       <div class="feature-icon"><svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
       <div class="feature-title">HTTP Repeater</div>
-      <div class="feature-desc">Craft and replay raw HTTP requests with full header control — raw editor or visual wizard, pre-populated from the scan, with a fullscreen response viewer.</div>
+      <div class="feature-desc">Craft and replay raw HTTP requests with full header control, raw editor or visual wizard, pre-populated from the scan, with a fullscreen response viewer.</div>
     </div>
 
     <div class="feature-card reveal">
       <div class="feature-icon"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
       <div class="feature-title">Live network &amp; JS console</div>
-      <div class="feature-desc">Watch every request the page makes in real time, filterable by type — detect REST, GraphQL, WebSocket and gRPC endpoints — and run JavaScript in the page context, DevTools-style.</div>
+      <div class="feature-desc">Watch every request the page makes in real time, filterable by type, detect REST, GraphQL, WebSocket and gRPC endpoints, and run JavaScript in the page context, DevTools-style.</div>
     </div>
 
     <div class="feature-card reveal">
       <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg></div>
       <div class="feature-title">Full HTML reports</div>
-      <div class="feature-desc">Export a complete, shareable report — techs, security analysis, headers, TLS, cookies, subdomains, DNS/email security, trust signals, hosting and network. Open in Chrome, print to PDF.</div>
+      <div class="feature-desc">Export a complete, shareable report, techs, security analysis, headers, TLS, cookies, subdomains, DNS/email security, trust signals, hosting and network. Open in Chrome, print to PDF.</div>
     </div>
 
     <div class="feature-card reveal">
       <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg></div>
       <div class="feature-title">Fully on-device</div>
-      <div class="feature-desc">No backend, no account, no telemetry. Scans run entirely in the embedded browser on your phone — long-press any value to copy it.</div>
+      <div class="feature-desc">No backend, no account, no telemetry. Scans run entirely in the embedded browser on your phone, long-press any value to copy it.</div>
     </div>
 
     <div class="feature-card reveal">
@@ -499,7 +499,7 @@
   <div class="section">
     <div class="section-label reveal">// intel &amp; security</div>
     <h2 class="section-title reveal">See what a site reveals about itself.</h2>
-    <p class="section-sub reveal">One scan gathers the signals a pentester checks by hand — DNS posture, email spoofability, hosting neighbors and header hygiene — and reports them straight, with the raw values and no made-up score.</p>
+    <p class="section-sub reveal">One scan gathers a site's DNS posture, email spoofability, hosting neighbors and header hygiene, and reports them straight, with the raw values and no made-up score.</p>
     <div class="intel-grid">
 
       <div class="intel-cell reveal">
@@ -547,12 +547,12 @@
       <div class="step reveal">
         <div class="step-num">01</div>
         <div class="step-title">Enter any URL</div>
-        <div class="step-desc">Paste or type any website — no <code>https://</code> required. Or share a link straight from Chrome; Ecliptic appears in the share sheet.</div>
+        <div class="step-desc">Paste or type any website, or share a link straight from Chrome. Ecliptic appears in the share sheet.</div>
       </div>
       <div class="step reveal">
         <div class="step-num">02</div>
         <div class="step-title">Scan</div>
-        <div class="step-desc">The embedded Chromium engine loads the page, injects probes, intercepts network requests and runs recon lookups in parallel — exactly like a real browser visit, plus DNS and certificate intel.</div>
+        <div class="step-desc">The embedded Chromium engine loads the page, injects probes, intercepts network requests and runs recon lookups in parallel, exactly like a real browser visit, plus DNS and certificate intel.</div>
       </div>
       <div class="step reveal">
         <div class="step-num">03</div>
@@ -574,7 +574,7 @@
       </svg>
       Get it on Google Play
     </a>
-    <span class="version-badge">v1.1.4 · Android 8.0+ · <a class="footer-link" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener" style="color:var(--teal)">GitHub Releases</a></span>
+    <span class="version-badge">v1.1.8 · build 40 · Android 8.0+ · <a class="footer-link" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener" style="color:var(--teal)">GitHub Releases</a></span>
   </div>
 </div>
 
