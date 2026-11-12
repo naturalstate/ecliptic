@@ -273,6 +273,7 @@ private fun ReconData.toJson() = JSONObject().apply {
     files?.let { put("files", it.toJson()) }
     asn?.let { put("asn", it) }
     if (subdomains.isNotEmpty()) put("subdomains", JSONArray(subdomains))
+    if (subdomainsChecked) put("subdomainsChecked", true)
     if (ipNeighbors.isNotEmpty()) put("ipNeighbors", JSONArray(ipNeighbors))
     reputation?.let { put("reputation", it.toJson()) }
     if (similarDomains.isNotEmpty()) put("similarDomains", JSONArray().also { arr ->
@@ -302,6 +303,7 @@ private fun JSONObject.toReconData() = ReconData(
     files = optJSONObject("files")?.toReconFiles(),
     asn = optString("asn").ifBlank { null },
     subdomains = optJSONArray("subdomains")?.toStringList() ?: emptyList(),
+    subdomainsChecked = optBoolean("subdomainsChecked", false),
     ipNeighbors = optJSONArray("ipNeighbors")?.toStringList() ?: emptyList(),
     reputation = optJSONObject("reputation")?.toHostReputation(),
     similarDomains = optJSONArray("similarDomains")?.let { arr ->

@@ -757,8 +757,10 @@ fun PocScanScreen(
                         onRefresh = { viewModel.loadRecon(force = true) },
                         portsLoading = state.portsLoading,
                         stagingLoading = state.stagingLoading,
+                        subsLoading = state.subsLoading,
                         onScanPorts = { viewModel.scanPorts() },
                         onEnumStaging = { tier -> viewModel.enumStaging(tier) },
+                        onFindSubdomains = { viewModel.findSubdomains() },
                     )
                     "intel_5" -> SelectionContainer { ParamContent(html = signals?.htmlSource ?: "") }
                     "intel_6" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput, onSendToRepeater = { viewModel.prefillRepeater(it); bottomTab = TAB_REPEAT })
@@ -2451,8 +2453,10 @@ private fun ReconContent(
     onRefresh: () -> Unit,
     portsLoading: Boolean,
     stagingLoading: Boolean,
+    subsLoading: Boolean,
     onScanPorts: () -> Unit,
     onEnumStaging: (EnumTier) -> Unit,
+    onFindSubdomains: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val domain = remember(url) {
@@ -2677,11 +2681,58 @@ private fun ReconContent(
         }
         item { Spacer(Modifier.height(8.dp)) }
 
+        // ── Subdomains (above Staging; the two share data) ─────────────────────
+        val stagingHostSet = (data?.staging ?: emptyList()).map { it.host }.toSet()
+        val subsUnion = ((data?.subdomains ?: emptyList()) + stagingHostSet).distinct().sorted()
+        val subsChecked = data?.subdomainsChecked == true
+        item { NetSectionHeader("SUBDOMAINS", subsUnion.size.takeIf { it > 0 }, loading || subsLoading) }
+        item {
+            Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (subsUnion.isEmpty()) {
+                        Text(
+                            if (loading || subsLoading) "Enumerating…"
+                            else "None yet. A check pulls from certificate-transparency logs (crt.sh) and the scanned page source. Staging hosts you find also appear here.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
+                        )
+                    }
+                    Button(
+                        onClick = onFindSubdomains,
+                        enabled = !subsLoading,
+                        colors = ButtonDefaults.buttonColors(containerColor = Teal.copy(alpha = 0.14f), contentColor = Teal),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        if (subsLoading) CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Teal, strokeWidth = 2.dp)
+                        else Icon(Icons.Filled.Search, null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text(if (subsUnion.isNotEmpty() || subsChecked) "Re-check subdomains" else "Find subdomains", fontSize = 12.sp, fontFamily = SpaceGrotesk)
+                    }
+                }
+            }
+        }
+        items(subsUnion) { sub ->
+            val isStaging = sub in stagingHostSet || com.ecliptic.scanner.looksLikeStaging(sub)
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri("https://$sub") } },
+                color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
+            ) {
+                Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(sub, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                    if (isStaging) Text("staging", color = Amber, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+
         // ── Staging / pre-prod host enumeration (manual, tiered) ───────────────
         item { NetSectionHeader("STAGING HOSTS", null, stagingLoading) }
         item {
             val hosts = data?.staging ?: emptyList()
             val checked = data?.stagingChecked == true
+            // Subdomains that look like staging environments, surfaced here too.
+            val stagingFromSubs = (data?.subdomains ?: emptyList())
+                .filter { com.ecliptic.scanner.looksLikeStaging(it) && it !in stagingHostSet }
             val coveredTier = data?.stagingTier?.let { runCatching { EnumTier.valueOf(it) }.getOrNull() }
             Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2724,6 +2775,18 @@ private fun ReconContent(
                                         Text("default", color = Amber, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                                     }
                                     h.ip?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace) }
+                                }
+                            }
+                        }
+                    }
+                    // Staging-looking hosts discovered via subdomains/source (no DNS brute needed).
+                    if (stagingFromSubs.isNotEmpty()) {
+                        Text("From subdomains:", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            stagingFromSubs.forEach { h ->
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(h, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                    Text("subdomain", color = Teal, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                                 }
                             }
                         }
@@ -2818,23 +2881,6 @@ private fun ReconContent(
                         Text("$mark  ${f.title}", color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         Text(f.detail, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, lineHeight = 15.sp)
                     }
-                }
-            }
-        }
-        item { Spacer(Modifier.height(8.dp)) }
-
-        // ── Subdomains (crt.sh) ────────────────────────────────────────────────
-        val subs = data?.subdomains ?: emptyList()
-        item { NetSectionHeader("SUBDOMAINS", subs.size.takeIf { it > 0 }, loading) }
-        if (subs.isEmpty()) {
-            item { Text(if (loading) "Enumerating…" else "None found", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
-        } else {
-            items(subs) { sub ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri("https://$sub") } },
-                    color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
-                ) {
-                    Text(sub, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 }
             }
         }

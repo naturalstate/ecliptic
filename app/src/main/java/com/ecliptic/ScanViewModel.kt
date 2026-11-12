@@ -15,6 +15,8 @@ import com.ecliptic.scanner.ReconData
 import com.ecliptic.scanner.RepeaterResponse
 import com.ecliptic.scanner.enumStaging
 import com.ecliptic.scanner.fetchReconData
+import com.ecliptic.scanner.fetchSubdomains
+import com.ecliptic.scanner.parseSubdomains
 import com.ecliptic.scanner.scanPorts
 import com.ecliptic.scanner.SpiderEngine
 import com.ecliptic.scanner.SpiderState
@@ -75,6 +77,7 @@ data class ScanUiState(
     // Manual, on-demand enumeration run from the Recon tab
     val portsLoading: Boolean = false,
     val stagingLoading: Boolean = false,
+    val subsLoading: Boolean = false,
 )
 
 class ScanViewModel(application: Application) : AndroidViewModel(application) {
@@ -169,7 +172,11 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         val host = runCatching { java.net.URI(url).host?.removePrefix("www.") }.getOrNull()
         _state.update { it.copy(reconLoading = true) }
         viewModelScope.launch {
-            val data = fetchReconData(url, host)
+            val fetched = fetchReconData(url, host)
+            // Augment crt.sh subdomains with any found in the scanned page source itself
+            // (links/attrs/inline JS), so e.g. dev.site.com in the HTML shows up automatically.
+            val parsed = host?.let { parseSubdomains(it, sourceBlob(sig)) } ?: emptyList()
+            val data = fetched.copy(subdomains = (fetched.subdomains + parsed).distinct().sorted())
             _state.update { it.copy(reconData = data, reconLoading = false) }
             // Persist into the current snapshot (so revisiting restores it) + disk.
             if (currentSnapshotIdx in snapshots.indices) {
@@ -177,6 +184,34 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 val saveHtml = AppPreferences.saveHtmlSourceFlow(appContext).first()
                 ScanHistoryStore.save(appContext, snapshots[currentSnapshotIdx], saveHtml)
             }
+        }
+    }
+
+    /** Concatenated page source (HTML + script/CSS URLs) for subdomain/text mining. */
+    private fun sourceBlob(sig: com.ecliptic.scanner.RawSignals): String = buildString {
+        append(sig.htmlSource)
+        append('\n'); append(sig.scriptUrls.joinToString("\n"))
+        append('\n'); append(sig.cssUrls.joinToString("\n"))
+    }
+
+    /**
+     * Manual subdomain discovery (like the port/staging buttons): re-runs crt.sh
+     * certificate-transparency enumeration and re-parses the page source, merging
+     * everything into the cached subdomain list. Never clears existing finds.
+     */
+    fun findSubdomains() {
+        if (_state.value.subsLoading) return
+        val host = currentHost() ?: return
+        val sig = _state.value.signals
+        _state.update { it.copy(subsLoading = true) }
+        viewModelScope.launch {
+            val crt = runCatching { fetchSubdomains(host) }.getOrDefault(emptyList())
+            val parsed = sig?.let { parseSubdomains(host, sourceBlob(it)) } ?: emptyList()
+            updateReconAndPersist { r ->
+                val merged = (r.subdomains + crt + parsed).map { it.lowercase() }.distinct().sorted()
+                r.copy(subdomains = merged, subdomainsChecked = true)
+            }
+            _state.update { it.copy(subsLoading = false) }
         }
     }
 

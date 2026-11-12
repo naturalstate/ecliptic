@@ -252,6 +252,7 @@ data class ReconData(
     val files: ReconFiles? = null,
     val asn: String? = null,
     val subdomains: List<String> = emptyList(),
+    val subdomainsChecked: Boolean = false,   // a manual "find subdomains" run completed
     val ipNeighbors: List<String> = emptyList(),
     val reputation: HostReputation? = null,
     val similarDomains: List<SimilarDomain> = emptyList(),
@@ -386,6 +387,38 @@ suspend fun fetchSubdomains(domain: String): List<String> = withContext(Dispatch
             set.toList().take(200)
         }
     } catch (_: Exception) { emptyList() }
+}
+
+// Staging-ish first labels, for cross-linking subdomains into the staging view.
+private val STAGING_LABELS = setOf(
+    "staging", "stage", "stg", "dev", "develop", "development", "test", "testing",
+    "uat", "qa", "sit", "preprod", "pre-prod", "pre", "ppe", "preview", "beta", "alpha",
+    "demo", "sandbox", "int", "integration", "canary", "edge", "next", "rc",
+)
+
+/** True if a host's left-most label looks like a staging / pre-prod environment. */
+fun looksLikeStaging(host: String): Boolean {
+    val label = host.substringBefore('.').lowercase()
+    if (label in STAGING_LABELS) return true
+    // staging1, dev2, qa-1 … (a staging label followed by digits/dashes)
+    return STAGING_LABELS.any { label.startsWith(it) && label.drop(it.length).all { c -> c.isDigit() || c == '-' } && label.length > it.length }
+}
+
+/**
+ * Extracts hostnames belonging to [domain]'s registrable domain from arbitrary text
+ * (page source, script/CSS URLs, strings). Finds things like `dev.site.com` wherever
+ * they appear — in links, attributes or inline JS — so they feed the Subdomains view
+ * automatically. Returns lower-cased, de-duplicated sub-hosts (never the apex itself).
+ */
+fun parseSubdomains(domain: String, text: String): List<String> {
+    if (text.isBlank()) return emptyList()
+    val base = registrableDomain(domain)
+    val rx = Regex("""(?i)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+${Regex.escape(base)}""")
+    return rx.findAll(text)
+        .map { it.value.lowercase().trimEnd('.') }
+        .filter { it.endsWith(".$base") && it != base && it != "www.$base" && !it.contains("..") }
+        .distinct()
+        .toList()
 }
 
 /** Reverse-IP neighbors (other domains sharing the IP) via HackerTarget. */
