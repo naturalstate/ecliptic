@@ -262,6 +262,7 @@ data class ReconData(
     val portsChecked: Boolean = false,     // distinguishes "none open" from "not run"
     val staging: List<StagingHost> = emptyList(),
     val stagingChecked: Boolean = false,
+    val stagingTier: String? = null,       // highest EnumTier name already enumerated
     val fetchedAt: Long = 0L,
 ) {
     val isEmpty: Boolean get() = dns == null && rdap == null && files == null && asn == null &&
@@ -509,6 +510,9 @@ private val PORT_SERVICES: Map<Int, String> = linkedMapOf(
 
 val DEFAULT_SCAN_PORTS: List<Int> = PORT_SERVICES.keys.toList()
 
+/** The full (port, service) list probed by [scanPorts] — for disclosure in the UI/docs. */
+val SCAN_PORT_INFO: List<Pair<Int, String>> = PORT_SERVICES.entries.map { it.key to it.value }
+
 /**
  * Probes the project host for open alt ports via bounded-parallel TCP connects.
  * Best-effort and short-timeout; a closed/filtered port simply fails the handshake.
@@ -581,34 +585,50 @@ private fun providerPrefixes(signals: List<String>): List<String> {
     }
 }
 
+private fun stagingListFor(tier: EnumTier): List<String> = when (tier) {
+    EnumTier.QUICK -> STAGING_QUICK
+    EnumTier.STANDARD -> STAGING_STANDARD
+    EnumTier.DEEP -> STAGING_DEEP
+}
+
 /**
  * Enumerates likely staging / pre-prod hosts for a domain: provider-default prefixes
  * (when the host is recognized) plus a tiered common-prefix wordlist, DNS-resolved in
  * parallel. Returns only candidates that actually resolve. DNS lookups only — no
  * connection is made to the candidate hosts.
+ *
+ * When [previousTier] is given (a lower tier already run), only the prefixes this tier
+ * *adds* are queried — the caller merges the result with what it already has, so bumping
+ * Quick → Standard → Deep never re-checks or clears earlier findings.
  */
-suspend fun enumStaging(host: String, dnsSignals: List<String>, tier: EnumTier): List<StagingHost> = coroutineScope {
+suspend fun enumStaging(
+    host: String,
+    dnsSignals: List<String>,
+    tier: EnumTier,
+    previousTier: EnumTier? = null,
+): List<StagingHost> = coroutineScope {
     val base = registrableDomain(host)
-    val tierList = when (tier) {
-        EnumTier.QUICK -> STAGING_QUICK
-        EnumTier.STANDARD -> STAGING_STANDARD
-        EnumTier.DEEP -> STAGING_DEEP
-    }
-    // Ordered, de-duplicated prefixes; provider defaults take precedence (and label).
-    val prefixes = LinkedHashMap<String, String>()
-    providerPrefixes(dnsSignals).forEach { prefixes.putIfAbsent(it, "provider") }
-    tierList.forEach { prefixes.putIfAbsent(it, "wordlist") }
+    // Ordered, de-duplicated target prefixes; provider defaults take precedence (and label).
+    val wanted = LinkedHashMap<String, String>()
+    providerPrefixes(dnsSignals).forEach { wanted.putIfAbsent(it, "provider") }
+    stagingListFor(tier).forEach { wanted.putIfAbsent(it, "wordlist") }
+    // Prefixes already covered by an earlier run (provider + the lower tier's wordlist).
+    val alreadyDone: Set<String> =
+        if (previousTier != null) (providerPrefixes(dnsSignals) + stagingListFor(previousTier)).toSet()
+        else emptySet()
 
     val gate = Semaphore(20)
-    prefixes.entries.map { (prefix, source) ->
-        async(Dispatchers.IO) {
-            gate.withPermit {
-                val cand = "$prefix.$base"
-                val ips = queryDns(cand, 1)
-                if (ips.isNotEmpty()) StagingHost(cand, source, ips.firstOrNull()) else null
+    wanted.entries
+        .filter { it.key !in alreadyDone }
+        .map { (prefix, source) ->
+            async(Dispatchers.IO) {
+                gate.withPermit {
+                    val cand = "$prefix.$base"
+                    val ips = queryDns(cand, 1)
+                    if (ips.isNotEmpty()) StagingHost(cand, source, ips.firstOrNull()) else null
+                }
             }
-        }
-    }.mapNotNull { it.await() }
+        }.mapNotNull { it.await() }
 }
 
 private fun extractEntityName(entity: JSONObject): String? {

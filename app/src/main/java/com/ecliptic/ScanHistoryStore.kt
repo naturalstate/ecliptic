@@ -288,6 +288,7 @@ private fun ReconData.toJson() = JSONObject().apply {
     }
     if (stagingChecked) {
         put("stagingChecked", true)
+        stagingTier?.let { put("stagingTier", it) }
         put("staging", JSONArray().also { arr ->
             staging.forEach { s -> arr.put(JSONObject().put("host", s.host).put("source", s.source).apply { s.ip?.let { put("ip", it) } }) }
         })
@@ -322,6 +323,7 @@ private fun JSONObject.toReconData() = ReconData(
         }
     } ?: emptyList(),
     stagingChecked = optBoolean("stagingChecked", false),
+    stagingTier = optString("stagingTier").ifBlank { null },
     fetchedAt = optLong("fetchedAt", 0L),
 )
 

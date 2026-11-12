@@ -208,6 +208,7 @@ import com.ecliptic.ui.theme.categoryAccentColor
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 
 // Bottom nav indices
 private const val TAB_TECH   = 0
@@ -518,6 +519,8 @@ fun PocScanScreen(
                         )
                         Text(
                             text = "ECLIPTIC",
+                            maxLines = 1,
+                            softWrap = false,   // never wrap the wordmark, even when the action row is crowded
                             style = TextStyle(
                                 fontFamily = SpaceGrotesk,
                                 fontWeight = FontWeight.Bold,
@@ -1331,24 +1334,32 @@ private fun TechDetailSheet(tech: Technology, scanUrl: String = "", onDismiss: (
 
 // ─── History arrow (tap once, or hold to repeat) ───────────────────────────────
 
-/** Fires [onClick] once on press, then repeatedly while held after a short delay. */
+/**
+ * Fires [onClick] once on press, then repeatedly while held after a short delay.
+ *
+ * The repeat loop runs inside the gesture's own coroutine (not an external scope), so it
+ * is cancelled the instant the pointer is released OR the gesture is torn down — e.g. when
+ * [enabled] flips as the arrow hits a history boundary. A previous version launched the
+ * loop on rememberCoroutineScope(); when enabled changed mid-hold, tryAwaitRelease() was
+ * abandoned, the loop leaked, and it kept stepping history forever (arrows got "stuck").
+ */
 private fun Modifier.repeatingClickable(
     enabled: Boolean,
     initialDelayMs: Long = 400,
     repeatMs: Long = 90,
     onClick: () -> Unit,
 ): Modifier = composed {
-    val scope = rememberCoroutineScope()
     pointerInput(enabled) {
         if (!enabled) return@pointerInput
         detectTapGestures(onPress = {
             onClick()
-            val job = scope.launch {
-                delay(initialDelayMs)
-                while (isActive) { onClick(); delay(repeatMs) }
+            // Still held after the initial delay? Repeat until released or cancelled.
+            // tryAwaitRelease() returns on release; withTimeoutOrNull returns null on hold.
+            var done = withTimeoutOrNull(initialDelayMs) { tryAwaitRelease() } != null
+            while (!done) {
+                onClick()
+                done = withTimeoutOrNull(repeatMs) { tryAwaitRelease() } != null
             }
-            tryAwaitRelease()
-            job.cancel()
         })
     }
 }
@@ -2292,7 +2303,7 @@ private fun ParamContent(html: String) {
         items(params) { (name, value) ->
             Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(name, color = Teal, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                    Text(name, color = Teal, fontSize = 12.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace)
                     if (value.isNotBlank()) {
                         Text("= $value", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     }
@@ -2425,6 +2436,7 @@ private fun ReconContent(
     var robotsExpanded   by remember { mutableStateOf(false) }
     var securityExpanded by remember { mutableStateOf(false) }
     var sitemapExpanded  by remember { mutableStateOf(false) }
+    var portsInfoExpanded by remember { mutableStateOf(false) }
 
     if (url.isBlank()) {
         Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -2608,6 +2620,23 @@ private fun ReconContent(
                             Text(if (checked) "Rescan ports" else "Scan common ports", fontSize = 12.sp, fontFamily = SpaceGrotesk)
                         }
                     }
+                    // Disclose exactly which ports are probed.
+                    Text(
+                        text = if (portsInfoExpanded) "Hide the ${com.ecliptic.scanner.DEFAULT_SCAN_PORTS.size} ports checked ▲"
+                               else "Which ${com.ecliptic.scanner.DEFAULT_SCAN_PORTS.size} ports are checked? ▼",
+                        color = Teal, fontSize = 11.sp, fontFamily = SpaceGrotesk,
+                        modifier = Modifier.clickable { portsInfoExpanded = !portsInfoExpanded },
+                    )
+                    if (portsInfoExpanded) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            com.ecliptic.scanner.SCAN_PORT_INFO.forEach { (port, service) ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(":$port", color = Teal, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(52.dp))
+                                    Text(service, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2618,23 +2647,29 @@ private fun ReconContent(
         item {
             val hosts = data?.staging ?: emptyList()
             val checked = data?.stagingChecked == true
+            val coveredTier = data?.stagingTier?.let { runCatching { EnumTier.valueOf(it) }.getOrNull() }
             Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "Resolves common staging/pre-prod names (staging.…, dev.…, uat.…) plus known-host defaults. DNS lookups only. Pick a depth:",
+                        "Resolves common staging/pre-prod names (staging.…, dev.…, uat.…) plus known-host defaults. DNS lookups only. A higher depth adds to the list — it never re-checks or clears what's found.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         EnumTier.entries.forEach { tier ->
+                            val covered = coveredTier != null && coveredTier.ordinal >= tier.ordinal
+                            val clickable = !stagingLoading && !covered
                             Surface(
-                                onClick = { if (!stagingLoading) onEnumStaging(tier) },
-                                enabled = !stagingLoading,
+                                onClick = { if (clickable) onEnumStaging(tier) },
+                                enabled = clickable,
                                 shape = RoundedCornerShape(8.dp),
-                                color = Teal.copy(alpha = 0.10f),
-                                border = BorderStroke(1.dp, Teal.copy(alpha = 0.5f)),
+                                color = if (covered) Teal.copy(alpha = 0.18f) else Teal.copy(alpha = 0.10f),
+                                border = BorderStroke(1.dp, Teal.copy(alpha = if (covered) 0.7f else 0.5f)),
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(tier.label, color = Teal, fontSize = 12.sp, fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        if (covered) Icon(Icons.Filled.Check, null, tint = Teal, modifier = Modifier.size(11.dp))
+                                        Text(tier.label, color = Teal, fontSize = 12.sp, fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold)
+                                    }
                                     Text("~${tier.count}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                                 }
                             }

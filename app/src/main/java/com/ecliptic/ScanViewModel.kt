@@ -214,12 +214,20 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Enumerate staging/pre-prod hosts at the chosen depth (manual). */
+    /**
+     * Enumerate staging/pre-prod hosts at the chosen depth (manual). Incremental: if a
+     * lower tier already ran, only the prefixes this tier adds are queried and the result
+     * is merged into the existing list — already-discovered hosts are never cleared or
+     * re-checked. Picking a tier already covered is a no-op.
+     */
     fun enumStaging(tier: EnumTier) {
         if (_state.value.stagingLoading) return
         val host = currentHost() ?: return
-        // Feed provider detection with whatever DNS/ASN signals we already have cached.
         val recon = _state.value.reconData
+        val prev = recon?.stagingTier?.let { runCatching { EnumTier.valueOf(it) }.getOrNull() }
+        // Already enumerated at this depth or deeper → keep what we have, do nothing.
+        if (prev != null && prev.ordinal >= tier.ordinal) return
+        // Feed provider detection with whatever DNS/ASN signals we already have cached.
         val signals = buildList {
             recon?.dns?.cnameRecords?.let { addAll(it) }
             recon?.dns?.nsRecords?.let { addAll(it) }
@@ -227,8 +235,11 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         }
         _state.update { it.copy(stagingLoading = true) }
         viewModelScope.launch {
-            val hosts = runCatching { enumStaging(host, signals, tier) }.getOrDefault(emptyList())
-            updateReconAndPersist { it.copy(staging = hosts, stagingChecked = true) }
+            val found = runCatching { enumStaging(host, signals, tier, prev) }.getOrDefault(emptyList())
+            updateReconAndPersist { r ->
+                val merged = (r.staging + found).distinctBy { it.host }
+                r.copy(staging = merged, stagingChecked = true, stagingTier = tier.name)
+            }
             _state.update { it.copy(stagingLoading = false) }
         }
     }

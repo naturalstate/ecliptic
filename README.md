@@ -154,7 +154,21 @@ Keyless reputation context (no API key required): domain age from registration d
 
 On-demand (manual) recon run from the Recon tab — intended for hosts you own or are authorized to test:
 
-- **Alt ports** — bounded-parallel TCP probe of ~26 common non-standard web/admin/dev ports (8000, 8443, 8444, 9000, 8080, cPanel/WHM, Webmin, Elasticsearch…), reporting open ports and their likely service
+- **Alt ports** — bounded-parallel TCP probe of 27 common non-standard web/admin/dev ports, reporting open ports and their likely service. The exact list is disclosed in-app (RECON → "Which ports are checked?") and here:
+
+  | Port | Service | Port | Service | Port | Service |
+  |---|---|---|---|---|---|
+  | 81 | HTTP-alt | 2096 | Webmail (SSL) | 8081 | HTTP-alt |
+  | 88 | HTTP/Kerberos | 3000 | Node/Grafana | 8088 | HTTP-alt |
+  | 591 | HTTP-alt | 4000 | Dev server | 8443 | HTTPS-alt |
+  | 2082 | cPanel | 5000 | Flask/Dev | 8444 | HTTPS-alt |
+  | 2083 | cPanel (SSL) | 7001 | WebLogic | 8888 | HTTP-alt |
+  | 2086 | WHM | 8000 | HTTP-alt | 9000 | PHP-FPM/SonarQube |
+  | 2087 | WHM (SSL) | 8008 | HTTP-alt | 9001 | Supervisor |
+  | 2095 | Webmail | 8080 | HTTP-proxy | 9090 | Prometheus/Admin |
+  | | | | | 9200 | Elasticsearch |
+  | | | | | 9443 | HTTPS-alt |
+  | | | | | 10000 | Webmin |
 - **Staging hosts** — tiered enumeration (**Quick ~10 / Standard ~30 / Deep ~80**) of common staging/pre-prod prefixes (`staging.`, `dev.`, `uat.`…), DNS-resolved in parallel; recognized hosts (WP Engine, Pantheon, Kinsta, Acquia, Flywheel, Netlify, Cloudways, Platform.sh) also get their **provider-default** staging patterns injected
 
 Both results are cached per scan, persist across restarts, and are included in the exported HTML report.
