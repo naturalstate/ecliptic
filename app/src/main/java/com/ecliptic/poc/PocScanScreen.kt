@@ -1805,6 +1805,36 @@ private fun HeaderRow(name: String, value: String) {
 
 @Composable
 private fun CookiesContent(richCookies: List<CookieInfo>, cookies: Map<String, String>) {
+    val context = LocalContext.current
+    var db by remember { mutableStateOf<com.ecliptic.fingerprint.CookieDatabase?>(null) }
+    LaunchedEffect(Unit) { db = com.ecliptic.fingerprint.CookieDatabase.get(context) }
+    var selected by remember { mutableStateOf<Pair<CookieInfo, com.ecliptic.fingerprint.CookieDatabase.Entry?>?>(null) }
+
+    selected?.let { (c, known) ->
+        if (known != null) {
+            ReferenceSheet(
+                title = c.name,
+                body = known.description,
+                rows = listOf(
+                    "Set by" to known.platform,
+                    "Category" to known.category,
+                    "Retention" to known.retention,
+                ),
+                url = com.ecliptic.fingerprint.CookieDatabase.SOURCE_URL,
+                source = com.ecliptic.fingerprint.CookieDatabase.SOURCE_NAME,
+                onDismiss = { selected = null },
+            )
+        } else {
+            ReferenceSheet(
+                title = c.name,
+                body = "Not found in the Open Cookie Database. It's likely proprietary — set by this site's own application rather than a known third-party platform. Inspect its value and attributes to judge its purpose.",
+                url = com.ecliptic.fingerprint.CookieDatabase.SOURCE_URL,
+                source = com.ecliptic.fingerprint.CookieDatabase.SOURCE_NAME,
+                onDismiss = { selected = null },
+            )
+        }
+    }
+
     val displayCookies = richCookies.ifEmpty {
         cookies.entries.map { (k, v) -> CookieInfo(name = k, value = v) }
     }
@@ -1847,8 +1877,9 @@ private fun CookiesContent(richCookies: List<CookieInfo>, cookies: Map<String, S
             }
         }
         items(displayCookies.sortedBy { it.name }) { c ->
+            val known = remember(c.name, db) { db?.lookup(c.name) }
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().then(if (db != null) Modifier.clickable { selected = c to known } else Modifier),
                 color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(8.dp),
             ) {
@@ -1859,6 +1890,17 @@ private fun CookiesContent(richCookies: List<CookieInfo>, cookies: Map<String, S
                         if (c.httpOnly) CookieFlagChip("HttpOnly")
                         if (c.secure)   CookieFlagChip("Secure")
                         c.sameSite?.let { CookieFlagChip(it) }
+                    }
+                    // Known-cookie classification (Open Cookie Database)
+                    if (db != null) {
+                        if (known != null) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                CookieClassChip("${known.platform} · ${known.category}", Teal)
+                                Text("ⓘ", color = Teal.copy(alpha = 0.6f), fontSize = 12.sp)
+                            }
+                        } else {
+                            CookieClassChip("proprietary / unknown", Amber)
+                        }
                     }
                     // Value
                     SelectionContainer {
@@ -1897,6 +1939,13 @@ private fun CookieFlagChip(label: String) {
     }
 }
 
+@Composable
+private fun CookieClassChip(label: String, color: androidx.compose.ui.graphics.Color) {
+    Surface(color = color.copy(alpha = 0.13f), shape = RoundedCornerShape(4.dp)) {
+        Text(label, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), color = color, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
 // ─── Security Headers tab ─────────────────────────────────────────────────────
 
 private val SECURITY_HEADER_KEYS = listOf(
@@ -1920,6 +1969,11 @@ private fun SecurityHeadersContent(signals: RawSignals?, responseHeaders: Map<St
     val score    = present.size
     val total    = SECURITY_HEADER_KEYS.size
     val findings = remember(signals) { signals?.let { SecurityAnalyzer.analyze(it) } ?: emptyList() }
+    var ref by remember { mutableStateOf<com.ecliptic.fingerprint.SecurityReference.Ref?>(null) }
+
+    ref?.let { r ->
+        ReferenceSheet(title = r.title, body = r.summary, url = r.url, source = r.source, onDismiss = { ref = null })
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1967,9 +2021,16 @@ private fun SecurityHeadersContent(signals: RawSignals?, responseHeaders: Map<St
                 val amber = Color(0xFFD9920A)
                 val accent = when (f.severity) { "alert" -> Red; "warn" -> amber; "ok" -> Green; else -> MaterialTheme.colorScheme.onSurfaceVariant }
                 val mark = when (f.severity) { "alert" -> "⚠"; "warn" -> "⚠"; "ok" -> "✓"; else -> "ⓘ" }
-                Surface(modifier = Modifier.fillMaxWidth(), color = accent.copy(alpha = 0.08f), shape = RoundedCornerShape(8.dp)) {
+                val learn = com.ecliptic.fingerprint.SecurityReference.forText("${f.title} ${f.detail}")
+                Surface(
+                    modifier = Modifier.fillMaxWidth().then(if (learn != null) Modifier.clickable { ref = learn } else Modifier),
+                    color = accent.copy(alpha = 0.08f), shape = RoundedCornerShape(8.dp),
+                ) {
                     Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("$mark  ${f.title}", color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("$mark  ${f.title}", color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            if (learn != null) Text("ⓘ", color = accent.copy(alpha = 0.6f), fontSize = 13.sp)
+                        }
                         Text(f.detail, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, lineHeight = 15.sp)
                     }
                 }
@@ -1983,9 +2044,16 @@ private fun SecurityHeadersContent(signals: RawSignals?, responseHeaders: Map<St
             }
             items(present) { (key, label) ->
                 val value = normalised[key] ?: ""
-                Surface(modifier = Modifier.fillMaxWidth(), color = Green.copy(alpha = 0.07f), shape = RoundedCornerShape(8.dp)) {
+                val learn = com.ecliptic.fingerprint.SecurityReference.forHeader(key)
+                Surface(
+                    modifier = Modifier.fillMaxWidth().then(if (learn != null) Modifier.clickable { ref = learn } else Modifier),
+                    color = Green.copy(alpha = 0.07f), shape = RoundedCornerShape(8.dp),
+                ) {
                     Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(label, color = Green, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, color = Green, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            if (learn != null) Text("ⓘ", color = Green.copy(alpha = 0.6f), fontSize = 13.sp)
+                        }
                         SelectionContainer {
                             Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp)
                         }
@@ -1999,9 +2067,16 @@ private fun SecurityHeadersContent(signals: RawSignals?, responseHeaders: Map<St
                 Text("MISSING", color = Red, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.12.em)
                 Spacer(Modifier.height(4.dp))
             }
-            items(missing) { (_, label) ->
-                Surface(modifier = Modifier.fillMaxWidth(), color = Red.copy(alpha = 0.06f), shape = RoundedCornerShape(8.dp)) {
-                    Text(label, modifier = Modifier.padding(10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            items(missing) { (key, label) ->
+                val learn = com.ecliptic.fingerprint.SecurityReference.forHeader(key)
+                Surface(
+                    modifier = Modifier.fillMaxWidth().then(if (learn != null) Modifier.clickable { ref = learn } else Modifier),
+                    color = Red.copy(alpha = 0.06f), shape = RoundedCornerShape(8.dp),
+                ) {
+                    Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                        if (learn != null) Text("ⓘ", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 13.sp)
+                    }
                 }
             }
         }
@@ -2534,6 +2609,48 @@ private fun StringDetailSheet(
                     val target = if (finding.category == "Email") "mailto:${finding.value}"
                         else if (finding.value.startsWith("http", true)) finding.value else "https://${finding.value}"
                     runCatching { uriHandler.openUri(target) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Generic "learn more" sheet: a title, a plain-language explanation, optional
+ * key/value rows, and an optional reference link that opens in a browser. Used by
+ * the Sec Headers definitions and the Cookie classifier.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReferenceSheet(
+    title: String,
+    body: String,
+    rows: List<Pair<String, String>> = emptyList(),
+    url: String? = null,
+    source: String? = null,
+    onDismiss: () -> Unit,
+) {
+    val uriHandler = LocalUriHandler.current
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(title, color = Teal, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            if (rows.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    rows.forEach { (k, v) ->
+                        if (v.isNotBlank()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("$k:", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.width(84.dp))
+                            Text(v, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+            if (body.isNotBlank()) {
+                Text(body, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, lineHeight = 19.sp)
+            }
+            if (url != null) {
+                SpiderButton("Read on ${source ?: "the web"}", Icons.Filled.OpenInBrowser) {
+                    runCatching { uriHandler.openUri(url) }
                 }
             }
         }

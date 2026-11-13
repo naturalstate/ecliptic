@@ -113,7 +113,7 @@ Dedicated audit tab scoring 10 critical security headers:
 | `Cross-Origin-Embedder-Policy` | Spectre mitigations |
 | `Cross-Origin-Resource-Policy` | Cross-origin data leaks |
 
-Present headers shown in full with their values. Missing headers flagged in red.
+Present headers shown in full with their values. Missing headers flagged in red. **Tap any header** (or an analysis finding) for a plain-language definition and a link to the canonical MDN / OWASP reference, so you can learn the concept on the spot.
 
 **Security-depth analysis (ANALYSIS section).** Beyond present/absent, the SEC HEADERS tab runs a static analyzer that flags *weak* configurations, each with the offending value and a severity (alert / warn / ok / info):
 
@@ -257,6 +257,8 @@ Full `Set-Cookie` header parsing, not just name/value:
 | HttpOnly | ✅ flag chip |
 | Secure | ✅ flag chip |
 | SameSite | ✅ flag chip |
+
+**Known vs proprietary.** Each cookie is checked against the [Open Cookie Database](https://github.com/jkwakman/Open-Cookie-Database) (bundled, ~2,300 entries). Recognised cookies are tagged with the platform that sets them and a category (e.g. `_ga` → Google Analytics · Analytics); unrecognised ones are flagged `proprietary / unknown`. Tap a cookie for its description, retention and source.
 
 ---
 
@@ -433,6 +435,8 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 - [x] Alt-port probe & staging-host enumeration
 - [x] Build-origin estimate, AI site-builder fingerprint + LLM comment-style heuristic
 - [x] Strings provenance, origin tagging + tap-to-copy / jump-to-source
+- [x] Inline learning, tap a security header or finding for a definition + MDN/OWASP link
+- [x] Cookie classification, known vs proprietary via the Open Cookie Database
 - [ ] Active subdomain brute-force, bundled SecLists wordlists, start/pause/stop
 - [ ] Authorized-use acknowledgement gate (pre-Play)
 - [ ] Authenticated scans, cookie / token / interactive login
