@@ -28,6 +28,7 @@ object BuildOriginAnalyzer {
         val commentCount: Int = 0,
         val llmSignalCount: Int = 0,
         val evidence: List<String> = emptyList(),  // human-readable matched markers
+        val samples: List<String> = emptyList(),    // actual comments that triggered signals
         val note: String = "",
         val analyzedJs: Boolean = false,           // bundled JS bodies were included
     )
@@ -129,6 +130,7 @@ object BuildOriginAnalyzer {
         }
 
         val matchedPhrases = LinkedHashSet<String>()
+        val flagged = LinkedHashSet<String>()   // the actual comments that triggered a signal
         var signal = 0
         var obvious = 0
         var emojiComments = 0
@@ -136,12 +138,14 @@ object BuildOriginAnalyzer {
         for (c in comments) {
             val cl = c.lowercase()
             var perComment = 0
+            var triggered = false
             for (p in LLM_PHRASES) {
-                if (cl.contains(p) && perComment < 3) { matchedPhrases.add(p); perComment++; signal++ }
+                if (cl.contains(p) && perComment < 3) { matchedPhrases.add(p); perComment++; signal++; triggered = true }
             }
-            if (OBVIOUS_COMMENT.containsMatchIn(c)) { obvious++; signal++ }
-            if (EMOJI.containsMatchIn(c)) { emojiComments++; signal++ }
+            if (OBVIOUS_COMMENT.containsMatchIn(c)) { obvious++; signal++; triggered = true }
+            if (EMOJI.containsMatchIn(c)) { emojiComments++; signal++; triggered = true }
             if (JSDOC.containsMatchIn(c)) jsdoc++
+            if (triggered && flagged.size < 20) flagged.add(c.take(160))
         }
         if (jsdoc >= 4) signal += (jsdoc / 4)
 
@@ -176,6 +180,7 @@ object BuildOriginAnalyzer {
             commentCount = commentCount,
             llmSignalCount = signal,
             evidence = evidence,
+            samples = flagged.toList(),
             note = "Heuristic from code-comment style. Not a verdict, and it can't identify which model (Claude / GPT / etc.).",
             analyzedJs = analyzedJs,
         )

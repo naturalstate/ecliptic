@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -395,9 +396,11 @@ fun PocScanScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     // Deep-scan JS results for the Strings tab, hoisted here (keyed per scan) so they
     // survive switching between Code subtabs, which disposes the subtab content.
-    var stringsDeepText by remember(signals?.finalUrl) { mutableStateOf("") }
-    // Seeded into the Source viewer's filter when "Find in source" is tapped on a Strings finding.
+    var stringsDeepScripts by remember(signals?.finalUrl) { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    // Seeded into the Source viewer when "Find in source" is tapped on a Strings finding:
+    // the search query, and which file (script URL, or "" for the HTML page) to open.
     var pendingSourceQuery by remember(signals?.finalUrl) { mutableStateOf("") }
+    var pendingSourceFile by remember(signals?.finalUrl) { mutableStateOf("") }
     var selectedTech by remember { mutableStateOf<Technology?>(null) }
     var isFullScreen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -555,7 +558,7 @@ fun PocScanScreen(
                                 fontFamily = SpaceGrotesk,
                                 letterSpacing = 0.02.em,
                                 maxLines = 1,
-                                modifier = Modifier.padding(start = 14.dp),
+                                modifier = Modifier.padding(start = 14.dp).longPressCopy(projectHost),
                             )
                         }
                     }
@@ -654,7 +657,7 @@ fun PocScanScreen(
                     letterSpacing = 0.02.em,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).longPressCopy(projectHost.ifBlank { urlInput }),
                 )
                 IconButton(onClick = { showShareSheet = true; viewModel.loadRecon() }, modifier = Modifier.size(38.dp)) {
                     Icon(Icons.Filled.Share, "Export report", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
@@ -751,7 +754,7 @@ fun PocScanScreen(
                     "intel_0" -> SelectionContainer { HeadersContent(requestHeaders = signals?.requestHeaders ?: emptyMap(), responseHeaders = signals?.headers ?: emptyMap()) }
                     "intel_1" -> SecurityHeadersContent(signals = signals, responseHeaders = signals?.headers ?: emptyMap())
                     "intel_2" -> CookiesContent(richCookies = signals?.richCookies ?: emptyList(), cookies = signals?.cookies ?: emptyMap())
-                    "intel_3" -> SelectionContainer { ApisContent(apis = signals?.detectedApis ?: emptyList()) }
+                    "intel_3" -> SelectionContainer { ApisContent(apis = signals?.detectedApis ?: emptyList(), pageUrl = signals?.finalUrl ?: "") }
                     "intel_4" -> ReconContent(
                         url = signals?.finalUrl ?: urlInput,
                         data = state.reconData,
@@ -771,8 +774,8 @@ fun PocScanScreen(
                     "intel_6" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput, onSendToRepeater = { viewModel.prefillRepeater(it); bottomTab = TAB_REPEAT })
                     "intel_7" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls, dns = state.reconData?.dns, asn = state.reconData?.asn, loading = state.reconLoading, onLoad = { viewModel.loadRecon() }) }
                     "intel_8" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), initialQuery = pendingSourceQuery, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_1"  -> SelectionContainer { StringsContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), deepText = stringsDeepText, onDeepText = { stringsDeepText = it }, onOpenInSource = { pendingSourceQuery = it; codeSubTab = 0 }) }
+                    "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), initialQuery = pendingSourceQuery, initialFile = pendingSourceFile, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
+                    "code_1"  -> SelectionContainer { StringsContent(html = signals?.htmlSource ?: "", pageUrl = signals?.finalUrl ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), deepScripts = stringsDeepScripts, onDeepScripts = { stringsDeepScripts = it }, onOpenInSource = { q, file -> pendingSourceQuery = q; pendingSourceFile = file; codeSubTab = 0 }) }
                     "code_2"  -> SelectionContainer { JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap()) }
                     "code_3"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_4"  -> SelectionContainer { NetContent(scanRequests = signals?.networkRequests ?: emptyList(), liveRequests = liveNetworkRequests) }
@@ -1601,6 +1604,21 @@ private fun TechIconFallback(
 
 // ─── Tab copy button helper ───────────────────────────────────────────────────
 
+/** Long-press to copy [value] to the clipboard with a confirmation toast. */
+@Composable
+private fun Modifier.longPressCopy(value: String): Modifier {
+    val context = LocalContext.current
+    return this.pointerInput(value) {
+        detectTapGestures(onLongPress = {
+            if (value.isNotBlank()) {
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("url", value))
+                Toast.makeText(context, "Copied $value", Toast.LENGTH_SHORT).show()
+            }
+        })
+    }
+}
+
 @Composable
 private fun TabCopyButton(modifier: Modifier = Modifier, buildText: () -> String) {
     val context = LocalContext.current
@@ -1831,7 +1849,7 @@ private fun CookiesContent(richCookies: List<CookieInfo>, cookies: Map<String, S
                     "Category" to known.category,
                     "Retention" to known.retention,
                 ),
-                url = com.ecliptic.fingerprint.CookieDatabase.SOURCE_URL,
+                url = com.ecliptic.fingerprint.CookieDatabase.searchUrl(c.name),
                 source = com.ecliptic.fingerprint.CookieDatabase.SOURCE_NAME,
                 onDismiss = { selected = null },
             )
@@ -1839,7 +1857,7 @@ private fun CookiesContent(richCookies: List<CookieInfo>, cookies: Map<String, S
             ReferenceSheet(
                 title = c.name,
                 body = "Not found in the Open Cookie Database. It's likely proprietary — set by this site's own application rather than a known third-party platform. Inspect its value and attributes to judge its purpose.",
-                url = com.ecliptic.fingerprint.CookieDatabase.SOURCE_URL,
+                url = com.ecliptic.fingerprint.CookieDatabase.searchUrl(c.name),
                 source = com.ecliptic.fingerprint.CookieDatabase.SOURCE_NAME,
                 onDismiss = { selected = null },
             )
@@ -2096,14 +2114,69 @@ private fun SecurityHeadersContent(signals: RawSignals?, responseHeaders: Map<St
 
 // ─── APIs tab ─────────────────────────────────────────────────────────────────
 
+/** Resolve a possibly-relative API endpoint against the scanned page URL. */
+private fun resolveApiUrl(endpoint: String, pageUrl: String): String = when {
+    endpoint.startsWith("http", ignoreCase = true) -> endpoint
+    endpoint.startsWith("ws", ignoreCase = true) -> endpoint
+    pageUrl.isBlank() -> endpoint
+    else -> runCatching { java.net.URI(pageUrl).resolve(endpoint).toString() }.getOrDefault(endpoint)
+}
+
+/**
+ * A tappable API endpoint: opens a menu to copy the URL, open it in a browser, or view
+ * its source in the in-app code viewer. Any referenced file should be reachable this way.
+ */
 @Composable
-private fun ApisContent(apis: List<DetectedApi>) {
+private fun ApiEndpointRow(endpoint: String, pageUrl: String, onViewSource: (String) -> Unit) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    var expanded by remember { mutableStateOf(false) }
+    val abs = remember(endpoint, pageUrl) { resolveApiUrl(endpoint, pageUrl) }
+    val httpish = abs.startsWith("http", ignoreCase = true)
+    Box {
+        Text(
+            endpoint,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
+            modifier = Modifier.fillMaxWidth().clickable { expanded = true }.padding(vertical = 2.dp),
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Copy URL") },
+                leadingIcon = { Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(16.dp)) },
+                onClick = {
+                    expanded = false
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("url", abs))
+                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                },
+            )
+            if (httpish) {
+                DropdownMenuItem(
+                    text = { Text("Open in browser") },
+                    leadingIcon = { Icon(Icons.Filled.OpenInBrowser, null, modifier = Modifier.size(16.dp)) },
+                    onClick = { expanded = false; runCatching { uriHandler.openUri(abs) } },
+                )
+                DropdownMenuItem(
+                    text = { Text("View source") },
+                    leadingIcon = { Icon(Icons.Filled.Code, null, modifier = Modifier.size(16.dp)) },
+                    onClick = { expanded = false; onViewSource(abs) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ApisContent(apis: List<DetectedApi>, pageUrl: String = "") {
     if (apis.isEmpty()) {
         Box(Modifier.fillMaxSize(), Alignment.Center) {
             Text("No APIs detected", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
         }
         return
     }
+    var viewerUrl by remember { mutableStateOf<String?>(null) }
+    viewerUrl?.let { FileViewerSheet(url = it, onDismiss = { viewerUrl = null }) }
     // Group by API type, preserving the detector's ordering (concrete endpoints first).
     val grouped: List<Pair<String, List<DetectedApi>>> =
         apis.groupBy { it.type }.toList()
@@ -2152,10 +2225,7 @@ private fun ApisContent(apis: List<DetectedApi>) {
                         items.forEach { api ->
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 if (api.endpoint != null) {
-                                    Text(
-                                        api.endpoint, color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
-                                    )
+                                    ApiEndpointRow(api.endpoint, pageUrl) { viewerUrl = it }
                                 }
                                 Text(
                                     api.evidence, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2446,24 +2516,29 @@ private fun ParamContent(html: String) {
 @Composable
 private fun StringsContent(
     html: String,
+    pageUrl: String,
     scriptUrls: List<String>,
-    deepText: String,
-    onDeepText: (String) -> Unit,
-    onOpenInSource: (String) -> Unit = {},
+    deepScripts: List<Pair<String, String>>,   // (url, body) of fetched JS, for provenance
+    onDeepScripts: (List<Pair<String, String>>) -> Unit,
+    onOpenInSource: (String, String) -> Unit = { _, _ -> },   // (query, fileUrl; "" = HTML)
 ) {
     val scope = rememberCoroutineScope()
     var deepLoading by remember { mutableStateOf(false) }
-    val deepScanned = deepText.isNotBlank()
+    val deepScanned = deepScripts.isNotEmpty()
     var selected by remember { mutableStateOf<Extractor.StringFinding?>(null) }
 
-    val findings = remember(html, deepText) {
-        (Extractor.findStrings(html, origin = "HTML") +
-            if (deepText.isNotBlank()) Extractor.findStrings(deepText, origin = "JS") else emptyList()).distinct()
+    // Each finding carries the URL of the file it came from in `origin` (the page URL for
+    // HTML, the script URL for JS), so the detail sheet can show the exact file and jump
+    // to it in the Source viewer.
+    val htmlOrigin = pageUrl.ifBlank { "HTML" }
+    val findings = remember(html, pageUrl, deepScripts) {
+        (Extractor.findStrings(html, origin = htmlOrigin) +
+            deepScripts.flatMap { (url, body) -> Extractor.findStrings(body, origin = url) }).distinct()
     }
     val grouped = findings.groupBy { it.category }.toList()
 
     selected?.let { f ->
-        StringDetailSheet(finding = f, onOpenInSource = onOpenInSource, onDismiss = { selected = null })
+        StringDetailSheet(finding = f, pageUrl = pageUrl, onOpenInSource = onOpenInSource, onDismiss = { selected = null })
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -2481,9 +2556,10 @@ private fun StringsContent(
                     onClick = {
                         deepLoading = true
                         scope.launch {
-                            val sb = StringBuilder()
-                            scriptUrls.take(8).forEach { sb.append(fetchTextContent(it)).append('\n') }
-                            onDeepText(sb.toString())
+                            val fetched = scriptUrls.filter { it.startsWith("http") }.take(8)
+                                .map { url -> url to fetchTextContent(url) }
+                                .filter { it.second.isNotBlank() }
+                            onDeepScripts(fetched)
                             deepLoading = false
                         }
                     },
@@ -2543,10 +2619,10 @@ private fun StringsContent(
                             )
                             if (f.origin.isNotBlank()) {
                                 Text(
-                                    f.origin,
+                                    sourceLabel(f.origin, pageUrl),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    fontSize = 9.sp, fontFamily = SpaceGrotesk,
-                                    modifier = Modifier.padding(start = 8.dp, top = 1.dp),
+                                    fontSize = 9.sp, fontFamily = SpaceGrotesk, maxLines = 1,
+                                    modifier = Modifier.padding(start = 8.dp, top = 1.dp).widthIn(max = 120.dp),
                                 )
                             }
                         }
@@ -2557,16 +2633,25 @@ private fun StringsContent(
     }
 }
 
+/** Short filename for a source origin URL (page URL shows as the host's document). */
+private fun sourceLabel(origin: String, pageUrl: String): String {
+    if (origin.isBlank() || origin == "HTML") return "HTML"
+    if (origin == pageUrl) return "HTML"
+    val seg = origin.substringBefore('?').substringBefore('#').substringAfterLast('/')
+    return seg.ifBlank { origin }
+}
+
 /**
- * Detail sheet for a single Strings finding: shows its category, severity, origin
- * (HTML vs JS), the full value, and actions — copy the value, find it in the Source
- * viewer, or open it in a browser when it looks like a URL/email.
+ * Detail sheet for a single Strings finding: category, severity, the exact file it was
+ * found in (name + full URL), the full value, and actions — copy the value, jump to it
+ * in the Source viewer, or open the source file in a browser.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StringDetailSheet(
     finding: Extractor.StringFinding,
-    onOpenInSource: (String) -> Unit,
+    pageUrl: String,
+    onOpenInSource: (String, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -2577,9 +2662,11 @@ private fun StringDetailSheet(
         "warn" -> Amber
         else -> Teal
     }
-    val looksLinkable = finding.category == "Email" ||
-        finding.value.startsWith("http", ignoreCase = true) ||
-        Regex("""^[a-z0-9.\-]+\.[a-z]{2,}(/|$)""", RegexOption.IGNORE_CASE).containsMatchIn(finding.value)
+    // The file this string came from. For HTML findings that's the page URL; for JS it's
+    // the script URL. "" origin (legacy) falls back to the page URL.
+    val isHtmlOrigin = finding.origin.isBlank() || finding.origin == "HTML" || finding.origin == pageUrl
+    val fileUrl = if (isHtmlOrigin) pageUrl else finding.origin
+    val fileName = sourceLabel(finding.origin, pageUrl).let { if (it == "HTML") (pageUrl.substringAfterLast('/').substringBefore('?').ifBlank { "index.html" }) else it }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2589,9 +2676,18 @@ private fun StringDetailSheet(
                     Text(finding.severity.uppercase(), color = accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                 }
-                Spacer(Modifier.weight(1f))
-                if (finding.origin.isNotBlank()) {
-                    Text("found in ${finding.origin}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = SpaceGrotesk)
+            }
+            // File provenance
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("File:", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.width(44.dp))
+                    Text(fileName, color = Teal, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                }
+                if (fileUrl.isNotBlank()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Path:", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.width(44.dp))
+                        Text(fileUrl, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace, lineHeight = 14.sp, modifier = Modifier.weight(1f))
+                    }
                 }
             }
             Surface(color = MaterialTheme.colorScheme.background, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2600,7 +2696,7 @@ private fun StringDetailSheet(
                         finding.value,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 12.sp, fontFamily = FontFamily.Monospace, lineHeight = 17.sp,
-                        modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()).padding(12.dp),
+                        modifier = Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState()).padding(12.dp),
                     )
                 }
             }
@@ -2611,14 +2707,14 @@ private fun StringDetailSheet(
                     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                 }
                 SpiderButton("Find in source", Icons.Filled.Search) {
-                    onOpenInSource(finding.value.trim().take(60))
+                    onOpenInSource(finding.value.trim().take(60), if (isHtmlOrigin) "" else fileUrl)
                     onDismiss()
                 }
             }
-            if (looksLinkable) {
-                SpiderButton("Open in browser", Icons.Filled.OpenInBrowser) {
-                    val target = if (finding.category == "Email") "mailto:${finding.value}"
-                        else if (finding.value.startsWith("http", true)) finding.value else "https://${finding.value}"
+            // Always available: open the source file (HTML page or JS file) in a browser.
+            if (fileUrl.isNotBlank()) {
+                SpiderButton("Open file in browser", Icons.Filled.OpenInBrowser) {
+                    val target = if (fileUrl.startsWith("http", true)) fileUrl else "https://$fileUrl"
                     runCatching { uriHandler.openUri(target) }
                 }
             }
@@ -2704,12 +2800,24 @@ private fun ReconContent(
     var securityExpanded by remember { mutableStateOf(false) }
     var sitemapExpanded  by remember { mutableStateOf(false) }
     var portsInfoExpanded by remember { mutableStateOf(false) }
+    var showBoSamples by remember { mutableStateOf(false) }
 
     if (url.isBlank()) {
         Box(Modifier.fillMaxSize(), Alignment.Center) {
             Text("No URL scanned", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
         }
         return
+    }
+
+    if (showBoSamples) {
+        val samples = data?.buildOrigin?.samples ?: emptyList()
+        ReferenceSheet(
+            title = "Flagged comments (${samples.size})",
+            body = if (samples.isEmpty()) "No specific comments were recorded."
+                   else "Comments whose wording matched the LLM-style heuristic:\n\n" +
+                        samples.joinToString("\n\n") { "• $it" },
+            onDismiss = { showBoSamples = false },
+        )
     }
 
     LazyColumn(
@@ -2810,6 +2918,11 @@ private fun ReconContent(
                         }
                         if (bo.note.isNotBlank()) {
                             Text(bo.note, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f), fontSize = 10.sp, lineHeight = 14.sp)
+                        }
+                        val showable = bo.verdict == com.ecliptic.scanner.BuildOriginAnalyzer.Verdict.HEAVY ||
+                            bo.verdict == com.ecliptic.scanner.BuildOriginAnalyzer.Verdict.MIXED
+                        if (showable && bo.samples.isNotEmpty()) {
+                            SpiderButton("Show flagged comments (${bo.samples.size})", Icons.Filled.Search) { showBoSamples = true }
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3569,10 +3682,13 @@ private fun SourceContent(
     scriptUrls: List<String> = emptyList(),
     cssUrls: List<String> = emptyList(),
     initialQuery: String = "",
+    initialFile: String = "",
     isFullScreen: Boolean = false,
     onToggleFullScreen: () -> Unit = {},
 ) {
-    var selectedFile by remember { mutableStateOf("__html__") }
+    // When jumped-to from Strings, open the specific file (script URL) the string came
+    // from; otherwise the HTML document.
+    var selectedFile by remember(initialFile) { mutableStateOf(if (initialFile.isNotBlank()) initialFile else "__html__") }
     var remoteContents by remember { mutableStateOf(mapOf<String, String>()) }
     var remoteLoading by remember { mutableStateOf(setOf<String>()) }
     // Seeded from a Strings "Find in source" jump; re-seeds whenever a new value arrives.
@@ -3594,6 +3710,18 @@ private fun SourceContent(
     val matchIndices = remember(searchQuery, lines) {
         if (searchQuery.length < 2) emptyList()
         else lines.indices.filter { lines[it].contains(searchQuery, ignoreCase = true) }
+    }
+
+    // Load the jumped-to remote file (from a Strings "Find in source") so its content
+    // is available to display and search.
+    LaunchedEffect(initialFile) {
+        if (initialFile.isNotBlank() && initialFile != "__html__" &&
+            initialFile !in remoteContents && initialFile !in remoteLoading) {
+            remoteLoading = remoteLoading + initialFile
+            val c = fetchTextContent(initialFile)
+            remoteContents = remoteContents + (initialFile to c)
+            remoteLoading = remoteLoading - initialFile
+        }
     }
 
     LaunchedEffect(matchIndices) { currentMatchIdx = 0 }
@@ -5647,6 +5775,23 @@ private fun AboutTabContent() {
         AboutInfoRow("Fingerprint DB", "enthec/webappanalyzer")
         AboutInfoRow("Detection layers", "HTTP · HTML · JS · DOM · Cookies · Network")
         AboutInfoRow("Min Android", "8.0 (API 26)")
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+        Spacer(Modifier.height(12.dp))
+
+        Text(
+            "ACCURACY",
+            fontSize = 10.sp, fontWeight = FontWeight.Bold,
+            letterSpacing = 0.1.em, color = Teal,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Results are a best-effort approximation, not a guarantee. Detection is " +
+                "heuristic and based on a single page snapshot, so there will be false " +
+                "positives and missed technologies, and build-origin / cookie / staging " +
+                "findings are estimates. Verify anything important yourself before relying on it.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp,
+        )
         Spacer(Modifier.height(16.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
         Spacer(Modifier.height(12.dp))

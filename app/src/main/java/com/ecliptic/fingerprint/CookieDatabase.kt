@@ -33,6 +33,16 @@ class CookieDatabase private constructor(
     companion object {
         const val SOURCE_NAME = "Open Cookie Database"
         const val SOURCE_URL = "https://github.com/jkwakman/Open-Cookie-Database"
+        private const val BROWSE_URL =
+            "https://jkwakman.github.io/Open-Cookie-Database/open-cookie-database.html"
+
+        /**
+         * Link to the searchable Open Cookie Database page, scrolled/highlighted to the
+         * given cookie via a browser text fragment (Chrome et al.), so the user lands on
+         * the entry instead of a bare page.
+         */
+        fun searchUrl(cookieName: String): String =
+            BROWSE_URL + "#:~:text=" + android.net.Uri.encode(cookieName.trim())
 
         @Volatile private var instance: CookieDatabase? = null
 

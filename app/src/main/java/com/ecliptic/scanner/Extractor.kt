@@ -15,6 +15,24 @@ object Extractor {
     data class StringFinding(val category: String, val value: String, val severity: String = "info", val origin: String = "")
 
     private val EMAIL = Regex("""[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}""")
+
+    // Extensions that mean an "email-looking" match is really a filename, e.g.
+    // "product-card@2x.jpg" (retina asset) — the @ fools the email regex.
+    private val NON_EMAIL_TLDS = setOf(
+        "jpg", "jpeg", "png", "gif", "svg", "webp", "avif", "ico", "bmp",
+        "js", "mjs", "cjs", "ts", "css", "scss", "sass", "less", "json", "xml",
+        "html", "htm", "php", "map", "wasm",
+        "woff", "woff2", "ttf", "otf", "eot",
+        "mp4", "webm", "mov", "mp3", "wav", "ogg", "pdf", "zip", "gz",
+    )
+
+    /** True when an EMAIL regex hit is actually a filename (retina asset, module, etc). */
+    private fun looksLikeFilename(v: String): Boolean {
+        val tld = v.substringAfterLast('.', "").lowercase()
+        if (tld in NON_EMAIL_TLDS) return true
+        // retina/pixel-density asset markers: foo@2x.png already caught above, but also @2x /@3x
+        return Regex("""@\d+x(\.|$)""").containsMatchIn(v)
+    }
     private val JWT = Regex("""eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{6,}""")
     private val IPV4 = Regex("""\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b""")
 
@@ -46,7 +64,10 @@ object Extractor {
             for (m in re.findAll(text).take(30)) out += StringFinding(name, m.value.trim().take(140), sev, origin)
         }
         for (m in JWT.findAll(text).take(40)) out += StringFinding("JWT", m.value.take(160), "warn", origin)
-        for (m in EMAIL.findAll(text).take(100)) out += StringFinding("Email", m.value, origin = origin)
+        for (m in EMAIL.findAll(text).take(100)) {
+            if (looksLikeFilename(m.value)) continue
+            out += StringFinding("Email", m.value, origin = origin)
+        }
         IPV4.findAll(text).map { it.value }
             .filter { !it.startsWith("0.") && !it.startsWith("255.255.255") }
             .distinct().take(60)

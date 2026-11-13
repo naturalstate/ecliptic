@@ -304,6 +304,7 @@ private fun ReconData.toJson() = JSONObject().apply {
             put("commentCount", bo.commentCount)
             put("llmSignalCount", bo.llmSignalCount)
             put("evidence", JSONArray(bo.evidence))
+            put("samples", JSONArray(bo.samples))
             put("note", bo.note)
             put("analyzedJs", bo.analyzedJs)
         })
@@ -351,6 +352,7 @@ private fun JSONObject.toReconData() = ReconData(
             commentCount = o.optInt("commentCount", 0),
             llmSignalCount = o.optInt("llmSignalCount", 0),
             evidence = o.optJSONArray("evidence")?.toStringList() ?: emptyList(),
+            samples = o.optJSONArray("samples")?.toStringList() ?: emptyList(),
             note = o.optString("note"),
             analyzedJs = o.optBoolean("analyzedJs", false),
         )
