@@ -181,6 +181,38 @@
     .tver { font-size: 10px; color: var(--teal); background: var(--teal-dim); padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; }
     .tconf { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
 
+    /* Colored tech-icon tiles — mirrors the app's full-colour logos */
+    .ticon { width: 28px; height: 28px; border-radius: 7px; background: var(--surface); border: 1px solid var(--border); display: grid; place-items: center; flex-shrink: 0; }
+    .ticon img { width: 17px; height: 17px; display: block; }
+
+    /* Auto-swiping multi-screen carousel inside the phone body */
+    .screens { display: flex; width: 400%; height: 100%; animation: slide 22s ease-in-out infinite; }
+    .screen { width: 25%; flex-shrink: 0; height: 100%; overflow: hidden; }
+    @keyframes slide {
+      0%, 20%   { transform: translateX(0); }
+      25%, 45%  { transform: translateX(-25%); }
+      50%, 70%  { transform: translateX(-50%); }
+      75%, 95%  { transform: translateX(-75%); }
+      100%      { transform: translateX(0); }
+    }
+    .score { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 10px; }
+    .score b { font-size: 26px; font-weight: 800; color: var(--teal); letter-spacing: -0.02em; }
+    .score span { font-size: 11px; color: var(--muted); }
+    .kv { display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 6px 0; color: var(--muted); border-bottom: 1px solid #141414; }
+    .kv .k { color: var(--text); min-width: 46px; }
+    .kv .val { margin-left: auto; color: var(--teal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .warnrow { display: flex; align-items: center; gap: 7px; font-size: 10.5px; line-height: 1.4; color: #f0c674; background: rgba(217,146,10,0.08); border: 1px solid rgba(217,146,10,0.2); border-radius: 7px; padding: 7px 9px; margin-top: 10px; }
+    .prog { height: 4px; background: var(--surface); border-radius: 3px; overflow: hidden; margin: 4px 0 12px; }
+    .prog i { display: block; height: 100%; width: 70%; background: var(--teal); box-shadow: 0 0 8px var(--teal); animation: fill 22s ease-in-out infinite; }
+    @keyframes fill { 0%,75% { width: 20%; } 92%,100% { width: 70%; } }
+    .spider-url { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #9fe9dc; padding: 5px 0; border-bottom: 1px solid #141414; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Bottom nav active state follows the carousel: Tech for screen 1, Intel for 2–4 */
+    .app-nav-item.nav-tech  { animation: navTech 22s ease-in-out infinite; }
+    .app-nav-item.nav-intel { animation: navIntel 22s ease-in-out infinite; }
+    @keyframes navTech  { 0%,22% { color: var(--teal); } 24%,100% { color: var(--muted); } }
+    @keyframes navIntel { 0%,22% { color: var(--muted); } 25%,97% { color: var(--teal); } 100% { color: var(--muted); } }
+
     .app-nav { display: flex; border-top: 1px solid var(--border); background: var(--surface); }
     .app-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 0 11px; font-size: 9px; letter-spacing: 0.04em; color: var(--muted); }
     .app-nav-item svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.7; }
@@ -305,7 +337,7 @@
 <!-- Hero -->
 <section class="hero">
   <div class="hero-left reveal">
-    <div class="hero-badge">v1.2.5 · build 47 · Free</div>
+    <div class="hero-badge">v1.2.6 · build 48 · Free</div>
     <h1>Fingerprint any website <span class="grad">from your phone.</span></h1>
     <p class="hero-desc">
       Point Ecliptic at any URL and it detects the full stack: CMS, frameworks, analytics, CDN, APIs, then goes deeper into security-header analysis, subdomains, DNS &amp; email security, hosting intel and 1,500+ patterns. A real browser engine, entirely on-device. No account, no backend, no telemetry.
@@ -360,28 +392,71 @@
         </div>
 
         <div class="app-body">
-          <div class="cat">CMS · Ecommerce</div>
-          <div class="trow"><div class="tava">S</div><div class="tname">Shopify</div><div class="tver">2.14.0</div></div>
+          <div class="screens">
 
-          <div class="cat">JavaScript framework</div>
-          <div class="trow"><div class="tava">R</div><div class="tname">React</div><div class="tver">18.2</div></div>
+            <!-- 1 · Tech detection (colored logos, like the real app) -->
+            <div class="screen">
+              <div class="cat">CMS · Ecommerce</div>
+              <div class="trow"><div class="ticon"><img src="https://cdn.simpleicons.org/shopify" alt="" loading="lazy"></div><div class="tname">Shopify</div><div class="tver">2.14.0</div></div>
+              <div class="cat">JavaScript framework</div>
+              <div class="trow"><div class="ticon"><img src="https://cdn.simpleicons.org/react" alt="" loading="lazy"></div><div class="tname">React</div><div class="tver">18.2</div></div>
+              <div class="cat">CDN · Security</div>
+              <div class="trow"><div class="ticon"><img src="https://cdn.simpleicons.org/cloudflare" alt="" loading="lazy"></div><div class="tname">Cloudflare</div><div class="tconf">100%</div></div>
+              <div class="cat">Analytics</div>
+              <div class="trow"><div class="ticon"><img src="https://cdn.simpleicons.org/googleanalytics" alt="" loading="lazy"></div><div class="tname">Google Analytics 4</div><div class="tconf">100%</div></div>
+              <div class="trow"><div class="ticon"><img src="https://cdn.simpleicons.org/hotjar" alt="" loading="lazy"></div><div class="tname">Hotjar</div><div class="tconf">95%</div></div>
+              <div class="cat">Web server</div>
+              <div class="trow"><div class="ticon"><img src="https://cdn.simpleicons.org/nginx" alt="" loading="lazy"></div><div class="tname">nginx</div><div class="tver">1.25</div></div>
+            </div>
 
-          <div class="cat">CDN · Security</div>
-          <div class="trow"><div class="tava">C</div><div class="tname">Cloudflare</div><div class="tconf">100%</div></div>
+            <!-- 2 · Security headers -->
+            <div class="screen">
+              <div class="cat">Security headers</div>
+              <div class="score"><b>7 / 10</b><span>headers present</span></div>
+              <div class="chk pass"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Content-Security-Policy</div>
+              <div class="chk pass"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Strict-Transport-Security</div>
+              <div class="chk pass"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>X-Content-Type-Options</div>
+              <div class="chk fail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>X-Frame-Options</div>
+              <div class="chk pass"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Referrer-Policy</div>
+              <div class="chk fail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Permissions-Policy</div>
+              <div class="warnrow">⚠ CSP uses 'unsafe-inline' — weakens XSS protection</div>
+            </div>
 
-          <div class="cat">Analytics</div>
-          <div class="trow"><div class="tava">G</div><div class="tname">Google Analytics 4</div><div class="tconf">100%</div></div>
-          <div class="trow"><div class="tava">H</div><div class="tname">Hotjar</div><div class="tconf">95%</div></div>
+            <!-- 3 · Network / DNS -->
+            <div class="screen">
+              <div class="cat">TLS certificate</div>
+              <div class="kv"><span class="k">Protocol</span><span class="val">TLS 1.3</span></div>
+              <div class="kv"><span class="k">Issuer</span><span class="val">Let's Encrypt</span></div>
+              <div class="cat">DNS records</div>
+              <div class="kv"><span class="k">A</span><span class="val">104.18.2.161</span></div>
+              <div class="kv"><span class="k">MX</span><span class="val">aspmx.l.google.com</span></div>
+              <div class="kv"><span class="k">NS</span><span class="val">cory.ns.cloudflare.com</span></div>
+              <div class="cat">ASN</div>
+              <div class="kv"><span class="k">AS13335</span><span class="val">Cloudflare, Inc.</span></div>
+            </div>
 
-          <div class="cat">Web server</div>
-          <div class="trow"><div class="tava">N</div><div class="tname">nginx</div><div class="tver">1.25</div></div>
+            <!-- 4 · Spider -->
+            <div class="screen">
+              <div class="cat">Spider · crawling</div>
+              <div class="score"><b>42</b><span>/ 60 pages mapped</span></div>
+              <div class="prog"><i></i></div>
+              <div class="spider-url">/products/snowboard-pro</div>
+              <div class="spider-url">/collections/all</div>
+              <div class="spider-url">/pages/about-us</div>
+              <div class="spider-url">/blogs/news/winter-2026</div>
+              <div class="spider-url">/cart</div>
+              <div class="spider-url">/account/login</div>
+              <div class="spider-url">/sitemap.xml</div>
+            </div>
+
+          </div>
         </div>
         <div class="app-nav">
-          <div class="app-nav-item active">
+          <div class="app-nav-item nav-tech">
             <svg viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
             Tech
           </div>
-          <div class="app-nav-item">
+          <div class="app-nav-item nav-intel">
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             Intel
           </div>
@@ -583,7 +658,7 @@
       </svg>
       Get it on Google Play
     </a>
-    <span class="version-badge">v1.2.5 · build 47 · Android 8.0+ · <a class="footer-link" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener" style="color:var(--teal)">GitHub Releases</a></span>
+    <span class="version-badge">v1.2.6 · build 48 · Android 8.0+ · <a class="footer-link" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener" style="color:var(--teal)">GitHub Releases</a></span>
   </div>
 </div>
 
