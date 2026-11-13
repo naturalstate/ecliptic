@@ -56,6 +56,7 @@ Think of it as a pocket-sized combination of Wappalyzer, a security-header analy
 🖧  Hosting & IP intel           →  ASN, reverse-IP neighbors, dedicated vs shared
 🚪  Alt-port probe               →  common non-standard web/admin/dev ports
 🧪  Staging-host enumeration     →  tiered wordlists + provider defaults (DNS-resolved)
+🤖  Build-origin estimate        →  AI site-builder fingerprint + LLM comment-style heuristic
 🍪  Deep cookie inspection       →  HttpOnly, Secure, SameSite, expiry, domain
 ⚡  API detection                →  REST, GraphQL, SOAP, gRPC, JSON-RPC, OpenAPI, WebSocket
 🕸️  Spider                       →  Crawl a site into a page map (sitemap + link following)
@@ -175,6 +176,17 @@ Both results are cached per scan, persist across restarts, and are included in t
 
 ---
 
+### 🤖 Build-Origin Estimate
+
+An honest, evidence-first guess at whether a site was built with the help of an AI coding tool. Two independent tiers, shown in the RECON tab:
+
+- **Platform fingerprint (high confidence)**, AI *site builders* leave hard markers in the shipped page. Ecliptic names the platform when it finds one, e.g. **Lovable** (`gptengineer.js`), **v0 by Vercel**, **bolt.new**, **Replit Agent**, **Framer**, **Durable**, **Wix ADI**, **Softr**, **Builder.io**.
+- **LLM comment-style heuristic (soft)**, over-commenting and recognisable phrasings ("in a real app", "for now", obvious one-line comments, emoji in comments, JSDoc on trivial functions) produce a confidence band and a label: *Appears heavily LLM-developed*, *Mixed codebase*, or *Minimal LLM comment markers*. Only meaningful on unminified source, so minified bundles are reported honestly as inconclusive.
+
+It never claims *which* model wrote the code (Claude vs GPT vs others): that is not reliably recoverable from shipped code. The HTML + headers are analysed automatically; **Analyze bundled JS** fetches the top scripts for a deeper comment pass. The matched evidence is always shown, and there is no vanity score.
+
+---
+
 ### ⚡ API Detection
 
 Finds the API endpoints a site actually uses, from the XHR/fetch requests captured during page load, the HTML source, and referenced asset URLs. Each entry shows the **concrete endpoint URL** where identifiable, grouped by type:
@@ -259,6 +271,7 @@ Full `Set-Cookie` header parsing, not just name/value:
 ### 👁️ Code Tab
 
 - **HTML Source**, Syntax-highlighted HTML viewer with search, remote CSS/JS file loading, save to Downloads, fullscreen mode
+- **Strings**, extracted secrets, tokens, JWTs, emails, IPs and comments, each tagged with its origin (HTML vs JS); tap any finding to copy it, jump to it in the Source viewer, or open it in a browser
 - **JS Globals**, Every `window.*` global detected at runtime, including framework markers, config objects, feature flags
 - **DOM Tree**, Collapsible interactive DOM tree with tag names, IDs, classes, attributes
 - **Network Requests**, All requests captured during page load, filterable by type (script, XHR, image, font, media)
@@ -418,6 +431,8 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 - [x] Trust signals, domain age, DNSSEC, HTTPS, email auth, look-alikes
 - [x] Subdomains, IP neighbors & hosting intel
 - [x] Alt-port probe & staging-host enumeration
+- [x] Build-origin estimate, AI site-builder fingerprint + LLM comment-style heuristic
+- [x] Strings provenance, origin tagging + tap-to-copy / jump-to-source
 - [ ] Active subdomain brute-force, bundled SecLists wordlists, start/pause/stop
 - [ ] Authorized-use acknowledgement gate (pre-Play)
 - [ ] Authenticated scans, cookie / token / interactive login
