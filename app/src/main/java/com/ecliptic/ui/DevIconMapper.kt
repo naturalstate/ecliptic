@@ -200,6 +200,48 @@ object DevIconMapper {
         "whatsapp"              to "whatsapp",
         "telegram"              to "telegram",
         // LinkedIn & Magento are absent from Simple Icons (trademark/removed) → no icon.
+
+        // ── Web-tech brands (verified Simple Icons slugs) ──────────────────────
+        // Every tech icon is SrcIn-tinted to one colour, so Simple Icons' uniform
+        // monochrome set is the better source: it avoids devicon's missing "-original"
+        // variants (which is why Next.js / Google Tag Manager fell back to a letter).
+        // These take priority over the devicon slugMap below.
+        "next.js"               to "nextdotjs",
+        "react"                 to "react",
+        "vue.js"                to "vuedotjs",
+        "nuxt.js"               to "nuxt",
+        "svelte"                to "svelte",
+        "sveltekit"             to "svelte",
+        "astro"                 to "astro",
+        "remix"                 to "remix",
+        "lucide"                to "lucide",
+        // Google products: devicon has no plain "google" icon, so these 404'd. Route
+        // each to its real Simple Icons brand.
+        "google tag manager"    to "googletagmanager",
+        "google analytics"      to "googleanalytics",
+        "google fonts"          to "googlefonts",
+        "google maps"           to "googlemaps",
+        // Hosting / platform / infra
+        "vercel"                to "vercel",
+        "netlify"               to "netlify",
+        "cloudflare"            to "cloudflare",
+        "cloudflare workers"    to "cloudflareworkers",
+        "framer"                to "framer",
+        "webflow"               to "webflow",
+        "squarespace"           to "squarespace",
+        "wix"                   to "wix",
+        "nginx"                 to "nginx",
+        "express"               to "express",
+        "fastify"               to "fastify",
+        // Headless CMS / data (contentful + strapi already mapped above)
+        "sanity"                to "sanity",
+        // Analytics / marketing / support SaaS
+        "sentry"                to "sentry",
+        "algolia"               to "algolia",
+        "hubspot"               to "hubspot",
+        "mailchimp"             to "mailchimp",
+        "intercom"              to "intercom",
+        "hotjar"                to "hotjar",
     )
 
     private fun simpleIconUrl(slug: String) = "https://cdn.simpleicons.org/$slug"

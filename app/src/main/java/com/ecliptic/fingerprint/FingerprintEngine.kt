@@ -53,14 +53,28 @@ object FingerprintEngine {
         }
 
         // Strict framework gate: client-side JS frameworks (React, Vue, Svelte,
-        // Angular, …) are high-value, high-false-positive detections. Only keep one
-        // when it was matched directly by a strong signal — a specific JS global,
-        // script URL, HTML/meta pattern, or a verified DOM constraint. Drop hits that
-        // exist only because another technology "implies" them, which is how minor
-        // third-party widgets were dragging in Svelte/React on unrelated sites.
+        // Angular, …) are high-value, high-false-positive detections. Drop a hit that
+        // exists ONLY because another technology "implies" it — that is how minor
+        // third-party widgets dragged in Svelte/React on unrelated sites.
+        //
+        // Exception: a meta-framework legitimately implies its runtime (Next.js → React,
+        // Nuxt → Vue, SvelteKit → Svelte, Gatsby → React). Keep the implied framework
+        // when the implying technology is itself a framework / meta-framework / SSG,
+        // so React stops disappearing on every Next.js site.
+        val trustedImplierCats = setOf(
+            12, // JavaScript frameworks
+            18, // Web frameworks
+            57, // Static site generator
+        )
         allDetected.entries.removeAll { (_, tech) ->
             val isJsFramework = tech.categories.contains(JS_FRAMEWORK_CATEGORY)
-            isJsFramework && tech.detectionMethod?.startsWith("Implied by") == true
+            if (!isJsFramework) return@removeAll false
+            val method = tech.detectionMethod ?: return@removeAll false
+            if (!method.startsWith("Implied by ")) return@removeAll false
+            val implier = method.removePrefix("Implied by ").trim()
+            val implierCats = db.entries.find { it.name == implier }?.catIds ?: emptyList()
+            // Remove only when NO trusted (meta-)framework implied it.
+            implierCats.none { it in trustedImplierCats }
         }
 
         return allDetected.values

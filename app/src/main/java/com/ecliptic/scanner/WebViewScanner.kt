@@ -55,6 +55,10 @@ private const val BROWSER_UA = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.
 private const val FALLBACK_UA = "Ecliptic/1.0 (+https://naturalstate.github.io/ecliptic/)"
 private val WAF_BLOCK_CODES = setOf(403, 429, 503, 520, 521, 522, 523, 524, 525, 526)
 
+// How long to wait after onPageFinished before harvesting signals, so async scripts
+// and deferred DOM (reCAPTCHA, Lucide icons, late hydration) have a chance to appear.
+private const val HARVEST_SETTLE_MS = 1200L
+
 // Builds the full harvest JS injected after onPageFinished
 private fun buildHarvestJs(jsPaths: Set<String>, domChecksJson: String): String {
     val pathsJson = buildJsonStringArray(jsPaths)
@@ -484,9 +488,17 @@ private suspend fun loadAndInject(webView: WebView, url: String, js: String): St
         client.onPageReady = {
             client.onPageReady = null
             client.onPageError = null
-            webView.evaluateJavascript(js) { result ->
-                if (cont.isActive) cont.resume(result ?: "null")
-            }
+            // Settle delay: onPageFinished fires when the main document is done, but
+            // async scripts (reCAPTCHA injected via GTM), late framework hydration, and
+            // deferred DOM rendering (e.g. Lucide's svg.lucide icons) happen *after* it.
+            // Harvesting immediately misses them. A short wait lets the page settle so
+            // the single snapshot catches more of what Wappalyzer sees by observing over
+            // time. Bounded by the outer withTimeout.
+            webView.postDelayed({
+                webView.evaluateJavascript(js) { result ->
+                    if (cont.isActive) cont.resume(result ?: "null")
+                }
+            }, HARVEST_SETTLE_MS)
         }
         client.onPageError = { errMsg ->
             client.onPageReady = null
