@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ecliptic wordmark glyph: the launcher icon's crescent + scan dot. The artwork is
-     scaled to ~85% within the 32x32 viewport so there is clear margin on every side and
-     nothing can clip at the edges when rendered small in the header. -->
+<!-- Ecliptic wordmark glyph: the launcher icon's two-crescent eclipse (evenOdd of two
+     overlapping circles) + scan dot. Geometry is refitted so the whole filled shape
+     (both crescents) sits inside the 32x32 viewport with a margin on every side — the
+     old coordinates let the shape poke past the top/right edges and clip flat. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="32dp"
@@ -11,12 +12,12 @@
 
     <path
         android:fillType="evenOdd"
-        android:pathData="M16,16 m-11.05,0 a11.05,11.05 0 1,0 22.1,0 a11.05,11.05 0 1,0 -22.1,0 M21.525,11.24 m-9.469,0 a9.469,9.469 0 1,0 18.938,0 a9.469,9.469 0 1,0 -18.938,0">
+        android:pathData="M13.956,17.65 m-11.456,0 a11.456,11.456 0 1,0 22.912,0 a11.456,11.456 0 1,0 -22.912,0 M19.68,12.72 m-9.817,0 a9.817,9.817 0 1,0 19.634,0 a9.817,9.817 0 1,0 -19.634,0">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="linear"
-                android:startX="6" android:startY="8"
-                android:endX="27" android:endY="25">
+                android:startX="5" android:startY="8"
+                android:endX="27" android:endY="27">
                 <item android:offset="0.0" android:color="#FF3BEBC9" />
                 <item android:offset="1.0" android:color="#FF10B981" />
             </gradient>
@@ -25,6 +26,6 @@
 
     <path
         android:fillColor="#FF00E5C8"
-        android:pathData="M25.435,7.33 m-1.989,0 a1.989,1.989 0 1,0 3.978,0 a1.989,1.989 0 1,0 -3.978,0" />
+        android:pathData="M23.74,8.66 m-2.062,0 a2.062,2.062 0 1,0 4.124,0 a2.062,2.062 0 1,0 -4.124,0" />
 
 </vector>

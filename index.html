@@ -275,12 +275,14 @@
     <linearGradient id="ec-g" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#3BEBC9"/><stop offset="1" stop-color="#10B981"/>
     </linearGradient>
-    <!-- Matches the Android launcher icon exactly: one evenodd crescent (disc with an
-         upper-right bite that shows the dark background through) plus the scan dot. -->
+    <!-- The two-crescent eclipse (same shape as the banner): evenodd of two overlapping
+         circles + the scan dot. Geometry is refitted so the whole filled shape sits
+         inside the 26x26 viewBox with margin — the old coordinates let it poke past the
+         top/right edges and clip flat. Design unchanged, just no longer clipped. -->
     <g id="ec-mark">
       <path fill-rule="evenodd" fill="url(#ec-g)"
-            d="M13,13 m-10.5,0 a10.5,10.5 0 1,0 21,0 a10.5,10.5 0 1,0 -21,0 M18.25,8.5 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0"/>
-      <circle cx="22" cy="4.75" r="1.9" fill="#00E5C8"/>
+            d="M11.333,14.33 m-9.333,0 a9.333,9.333 0 1,0 18.666,0 a9.333,9.333 0 1,0 -18.666,0 M16,10.33 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0"/>
+      <circle cx="19.33" cy="7" r="1.689" fill="#00E5C8"/>
     </g>
   </defs>
 </svg>
@@ -303,7 +305,7 @@
 <!-- Hero -->
 <section class="hero">
   <div class="hero-left reveal">
-    <div class="hero-badge">v1.2.4 · build 46 · Free</div>
+    <div class="hero-badge">v1.2.5 · build 47 · Free</div>
     <h1>Fingerprint any website <span class="grad">from your phone.</span></h1>
     <p class="hero-desc">
       Point Ecliptic at any URL and it detects the full stack: CMS, frameworks, analytics, CDN, APIs, then goes deeper into security-header analysis, subdomains, DNS &amp; email security, hosting intel and 1,500+ patterns. A real browser engine, entirely on-device. No account, no backend, no telemetry.
@@ -581,7 +583,7 @@
       </svg>
       Get it on Google Play
     </a>
-    <span class="version-badge">v1.2.4 · build 46 · Android 8.0+ · <a class="footer-link" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener" style="color:var(--teal)">GitHub Releases</a></span>
+    <span class="version-badge">v1.2.5 · build 47 · Android 8.0+ · <a class="footer-link" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener" style="color:var(--teal)">GitHub Releases</a></span>
   </div>
 </div>
 
