@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/images/banner.svg" alt="Ecliptic — fingerprint any website from your phone" width="840" />
+<img src="docs/images/banner.svg" alt="Ecliptic, fingerprint any website from your phone" width="840" />
 
 <p align="center">
   <a href="https://developer.android.com"><img src="https://img.shields.io/badge/platform-Android-21AD9A?style=flat-square&logo=android&logoColor=white" alt="Platform Android"></a>
@@ -26,9 +26,9 @@
 
 ## What is Ecliptic?
 
-Ecliptic is a native Android app that gives you instant, deep intelligence on any website. Point it at a URL — or share directly from Chrome — and it fingerprints the entire tech stack using three independent analysis layers: live HTTP headers, HTML source analysis, and JavaScript runtime probing via a real Chromium engine (Android WebView).
+Ecliptic is a native Android app that gives you instant, deep intelligence on any website. Point it at a URL, or share directly from Chrome, and it fingerprints the entire tech stack using three independent analysis layers: live HTTP headers, HTML source analysis, and JavaScript runtime probing via a real Chromium engine (Android WebView).
 
-Think of it as a pocket-sized combination of Wappalyzer, a security-header analyzer, an HTTP repeater, a site spider, and a full OSINT/recon suite — DNS & email-security posture, subdomains, hosting and IP neighbors, look-alike domains, alt-port and staging-host discovery — with everything running entirely on your device. No account, no backend, no telemetry.
+Think of it as a pocket-sized combination of Wappalyzer, a security-header analyzer, an HTTP repeater, a site spider, and a full OSINT/recon suite, DNS & email-security posture, subdomains, hosting and IP neighbors, look-alike domains, alt-port and staging-host discovery, with everything running entirely on your device. No account, no backend, no telemetry.
 
 ---
 
@@ -78,7 +78,7 @@ Think of it as a pocket-sized combination of Wappalyzer, a security-header analy
 
 ### 🔬 Technology Fingerprinting
 
-Powered by the [enthec/webappanalyzer](https://github.com/enthec/webappanalyzer) signature database — the same engine behind Wappalyzer — running entirely on-device. Detection uses layered signals:
+Powered by the [enthec/webappanalyzer](https://github.com/enthec/webappanalyzer) signature database, the same engine behind Wappalyzer, running entirely on-device. Detection uses layered signals:
 
 | Layer | What it checks |
 |---|---|
@@ -116,20 +116,20 @@ Present headers shown in full with their values. Missing headers flagged in red.
 
 **Security-depth analysis (ANALYSIS section).** Beyond present/absent, the SEC HEADERS tab runs a static analyzer that flags *weak* configurations, each with the offending value and a severity (alert / warn / ok / info):
 
-- **Clickjacking** — missing/weak `X-Frame-Options` and absent `frame-ancestors` in CSP
-- **CSP quality** — `unsafe-inline`, `unsafe-eval`, wildcard sources
-- **CORS misconfiguration** — wildcard `Access-Control-Allow-Origin`, and the dangerous `*` + credentials combination (flagged alert)
-- **SRI** — third-party `<script>` / `<link>` loaded without a Subresource Integrity hash
-- **HSTS** — `max-age`, `includeSubDomains`, `preload` completeness
+- **Clickjacking**, missing/weak `X-Frame-Options` and absent `frame-ancestors` in CSP
+- **CSP quality**, `unsafe-inline`, `unsafe-eval`, wildcard sources
+- **CORS misconfiguration**, wildcard `Access-Control-Allow-Origin`, and the dangerous `*` + credentials combination (flagged alert)
+- **SRI**, third-party `<script>` / `<link>` loaded without a Subresource Integrity hash
+- **HSTS**, `max-age`, `includeSubDomains`, `preload` completeness
 - **Mixed content** and **information disclosure** (`X-Powered-By`, versioned `Server`)
 
-No vanity letter grade — findings are reported straight, with the raw evidence.
+No vanity letter grade, findings are reported straight, with the raw evidence.
 
 ---
 
 ### 📧 DNS & Email Security
 
-Checks the DNS records that decide whether a domain can be spoofed — shown as clear pass/fail with the raw record values:
+Checks the DNS records that decide whether a domain can be spoofed, shown as clear pass/fail with the raw record values:
 
 | Check | What it verifies |
 |---|---|
@@ -146,15 +146,15 @@ Keyless reputation context (no API key required): domain age from registration d
 
 ### 🌍 Subdomains, Hosting & Look-alikes
 
-- **Subdomains** — enumerated from certificate-transparency logs (crt.sh)
-- **IP neighbors** — reverse-IP lookup of other sites sharing the host, flagging **dedicated vs shared** hosting
-- **Similar domains** — generated typosquats (TLD swaps, omissions, transpositions, homoglyphs) filtered to the ones that actually resolve
+- **Subdomains**, enumerated from certificate-transparency logs (crt.sh)
+- **IP neighbors**, reverse-IP lookup of other sites sharing the host, flagging **dedicated vs shared** hosting
+- **Similar domains**, generated typosquats (TLD swaps, omissions, transpositions, homoglyphs) filtered to the ones that actually resolve
 
 ### 🚪 Alt-Port Probe & 🧪 Staging Enumeration
 
-On-demand (manual) recon run from the Recon tab — intended for hosts you own or are authorized to test:
+On-demand (manual) recon run from the Recon tab, intended for hosts you own or are authorized to test:
 
-- **Alt ports** — bounded-parallel TCP probe of 27 common non-standard web/admin/dev ports, reporting open ports and their likely service. The exact list is disclosed in-app (RECON → "Which ports are checked?") and here:
+- **Alt ports**, bounded-parallel TCP probe of 27 common non-standard web/admin/dev ports, reporting open ports and their likely service. The exact list is disclosed in-app (RECON → "Which ports are checked?") and here:
 
   | Port | Service | Port | Service | Port | Service |
   |---|---|---|---|---|---|
@@ -169,7 +169,7 @@ On-demand (manual) recon run from the Recon tab — intended for hosts you own o
   | | | | | 9200 | Elasticsearch |
   | | | | | 9443 | HTTPS-alt |
   | | | | | 10000 | Webmin |
-- **Staging hosts** — tiered enumeration (**Quick ~10 / Standard ~30 / Deep ~80**) of common staging/pre-prod prefixes (`staging.`, `dev.`, `uat.`…), DNS-resolved in parallel; recognized hosts (WP Engine, Pantheon, Kinsta, Acquia, Flywheel, Netlify, Cloudways, Platform.sh) also get their **provider-default** staging patterns injected
+- **Staging hosts**, tiered enumeration (**Quick ~10 / Standard ~30 / Deep ~80**) of common staging/pre-prod prefixes (`staging.`, `dev.`, `uat.`…), DNS-resolved in parallel; recognized hosts (WP Engine, Pantheon, Kinsta, Acquia, Flywheel, Netlify, Cloudways, Platform.sh) also get their **provider-default** staging patterns injected
 
 Both results are cached per scan, persist across restarts, and are included in the exported HTML report.
 
@@ -177,15 +177,15 @@ Both results are cached per scan, persist across restarts, and are included in t
 
 ### ⚡ API Detection
 
-Finds the API endpoints a site actually uses — from the XHR/fetch requests captured during page load, the HTML source, and referenced asset URLs. Each entry shows the **concrete endpoint URL** where identifiable, grouped by type:
+Finds the API endpoints a site actually uses, from the XHR/fetch requests captured during page load, the HTML source, and referenced asset URLs. Each entry shows the **concrete endpoint URL** where identifiable, grouped by type:
 
-- **REST** — `/api/…`, `/v1…`, `api.` hosts and conventional REST endpoints
-- **GraphQL** — endpoint paths, `__schema`/`__typename` hints
-- **WebSocket** — `ws://`/`wss://` endpoints, `new WebSocket()` calls, Socket.IO usage
-- **JSON-RPC** — `jsonrpc` / `json-rpc` references
-- **SOAP** — WSDL references, `SOAPAction` headers
-- **gRPC** — `application/grpc` content type, `grpc-web` markers
-- **OpenAPI / Swagger** — `swagger`, `openapi`, `api-docs` references
+- **REST**, `/api/…`, `/v1…`, `api.` hosts and conventional REST endpoints
+- **GraphQL**, endpoint paths, `__schema`/`__typename` hints
+- **WebSocket**, `ws://`/`wss://` endpoints, `new WebSocket()` calls, Socket.IO usage
+- **JSON-RPC**, `jsonrpc` / `json-rpc` references
+- **SOAP**, WSDL references, `SOAPAction` headers
+- **gRPC**, `application/grpc` content type, `grpc-web` markers
+- **OpenAPI / Swagger**, `swagger`, `openapi`, `api-docs` references
 
 Endpoints are de-duplicated and copyable; protocol hints without a concrete URL are still listed.
 
@@ -193,13 +193,13 @@ Endpoints are de-duplicated and copyable; protocol hints without a concrete URL 
 
 ### 🕸️ Spider
 
-Crawl a site into a map of its pages, right from the Intel tab — to the right of Recon.
+Crawl a site into a map of its pages, right from the Intel tab, to the right of Recon.
 
-- **Sitemap-first** — seeds from `robots.txt` and common sitemap paths (`/sitemap.xml`, `/sitemap_index.xml`, `/sitemaps.xml`, `/wp-sitemap.xml`), **following sitemap indexes** down to real page URLs to minimise traffic
-- **Link following** — also harvests `<a href>` links from the page source when no sitemap exists
-- **Same-site & polite** — stays on one host (treats `www` and apex as the same site), with a conservative page/depth cap and a short delay between requests
-- **Controls** — Start / Pause / Stop, live progress, and one-tap **copy** of the full URL list
-- Each scan's spider is its own — results never bleed between scans
+- **Sitemap-first**, seeds from `robots.txt` and common sitemap paths (`/sitemap.xml`, `/sitemap_index.xml`, `/sitemaps.xml`, `/wp-sitemap.xml`), **following sitemap indexes** down to real page URLs to minimise traffic
+- **Link following**, also harvests `<a href>` links from the page source when no sitemap exists
+- **Same-site & polite**, stays on one host (treats `www` and apex as the same site), with a conservative page/depth cap and a short delay between requests
+- **Controls**, Start / Pause / Stop, live progress, and one-tap **copy** of the full URL list
+- Each scan's spider is its own, results never bleed between scans
 
 ---
 
@@ -209,10 +209,10 @@ Crawl a site into a map of its pages, right from the Intel tab — to the right 
 <img src="/screenshots/network_intel.jpg" alt="Network Tab" width="280" />
 </div>
 
-- **TLS Certificate** — Protocol version, cipher suite, subject, issuer, validity period, Subject Alternative Names (SANs)
-- **DNS Records** — Live lookup via Google DNS-over-HTTPS: A, CNAME, MX, NS, TXT records
-- **ASN** — Autonomous System Number and organisation lookup (via ipinfo.io) from first A record
-- **Social Links** — Twitter/X, Facebook, Instagram, LinkedIn, YouTube, GitHub, TikTok, Pinterest links extracted from page source
+- **TLS Certificate**, Protocol version, cipher suite, subject, issuer, validity period, Subject Alternative Names (SANs)
+- **DNS Records**, Live lookup via Google DNS-over-HTTPS: A, CNAME, MX, NS, TXT records
+- **ASN**, Autonomous System Number and organisation lookup (via ipinfo.io) from first A record
+- **Social Links**, Twitter/X, Facebook, Instagram, LinkedIn, YouTube, GitHub, TikTok, Pinterest links extracted from page source
 
 ---
 
@@ -220,21 +220,21 @@ Crawl a site into a map of its pages, right from the Intel tab — to the right 
 
 The Recon sub-tab aggregates everything OSINT in one place (auto-loaded once per scan, cached, with a manual refresh):
 
-- **Wayback Machine** — Direct link to archive.org history for the scanned URL
-- **WHOIS / RDAP** — Registrar, registrant, creation/expiry/updated dates, domain status, name servers
-- **DNS & email security** — SPF, DMARC, DKIM, DNSSEC, CAA, HTTP→HTTPS (see above)
-- **Alt ports** — manual TCP probe of common non-standard ports
-- **Staging hosts** — manual tiered enumeration + provider defaults
-- **Subdomains / IP neighbors / Similar domains** — surfaced here and in the report
-- **robots.txt** — Fetched live, collapsible full view
-- **security.txt** — Fetched from `/.well-known/security.txt` and `/security.txt`
-- **sitemap** — Discovered via `robots.txt` and common paths (`/sitemap.xml`, `/sitemap_index.xml`, `/sitemaps.xml`, `/wp-sitemap.xml`)
+- **Wayback Machine**, Direct link to archive.org history for the scanned URL
+- **WHOIS / RDAP**, Registrar, registrant, creation/expiry/updated dates, domain status, name servers
+- **DNS & email security**, SPF, DMARC, DKIM, DNSSEC, CAA, HTTP→HTTPS (see above)
+- **Alt ports**, manual TCP probe of common non-standard ports
+- **Staging hosts**, manual tiered enumeration + provider defaults
+- **Subdomains / IP neighbors / Similar domains**, surfaced here and in the report
+- **robots.txt**, Fetched live, collapsible full view
+- **security.txt**, Fetched from `/.well-known/security.txt` and `/security.txt`
+- **sitemap**, Discovered via `robots.txt` and common paths (`/sitemap.xml`, `/sitemap_index.xml`, `/sitemaps.xml`, `/wp-sitemap.xml`)
 
 ---
 
 ### 🍪 Cookie Inspector
 
-Full `Set-Cookie` header parsing — not just name/value:
+Full `Set-Cookie` header parsing, not just name/value:
 
 | Attribute | Shown |
 |---|---|
@@ -250,19 +250,19 @@ Full `Set-Cookie` header parsing — not just name/value:
 
 ### 📋 Headers Tab
 
-- **Request headers** — exactly what Ecliptic sent to the server
-- **Response headers** — full server response headers
-- **Security Headers** — dedicated sub-tab with score and full values (see above)
+- **Request headers**, exactly what Ecliptic sent to the server
+- **Response headers**, full server response headers
+- **Security Headers**, dedicated sub-tab with score and full values (see above)
 
 ---
 
 ### 👁️ Code Tab
 
-- **HTML Source** — Syntax-highlighted HTML viewer with search, remote CSS/JS file loading, save to Downloads, fullscreen mode
-- **JS Globals** — Every `window.*` global detected at runtime, including framework markers, config objects, feature flags
-- **DOM Tree** — Collapsible interactive DOM tree with tag names, IDs, classes, attributes
-- **Network Requests** — All requests captured during page load, filterable by type (script, XHR, image, font, media)
-- **Console** — Live JS console with eval support — run JavaScript in the page context directly from the app
+- **HTML Source**, Syntax-highlighted HTML viewer with search, remote CSS/JS file loading, save to Downloads, fullscreen mode
+- **JS Globals**, Every `window.*` global detected at runtime, including framework markers, config objects, feature flags
+- **DOM Tree**, Collapsible interactive DOM tree with tag names, IDs, classes, attributes
+- **Network Requests**, All requests captured during page load, filterable by type (script, XHR, image, font, media)
+- **Console**, Live JS console with eval support, run JavaScript in the page context directly from the app
 
 ---
 
@@ -270,19 +270,19 @@ Full `Set-Cookie` header parsing — not just name/value:
 
 Every scan is automatically saved to device storage and survives app restarts.
 
-- **Persistent storage** — up to 50 scans saved as JSON files in internal storage (auto-pruned oldest)
-- **← → navigation** — arrows appear in the header once you have multiple scans; tap to browse previous results (press-and-hold to fast-advance)
-- **Delete a scan** — trash icon in the header removes the scan in view (with a confirm), from memory and disk
-- **Full fidelity** — saved scans restore tech list, headers, cookies, TLS, APIs, recon (DNS/WHOIS/security/subdomains/ports/staging), and network requests
-- **Save HTML source** — optional setting (off by default) to also persist raw HTML (~500 KB extra per scan)
+- **Persistent storage**, up to 50 scans saved as JSON files in internal storage (auto-pruned oldest)
+- **← → navigation**, arrows appear in the header once you have multiple scans; tap to browse previous results (press-and-hold to fast-advance)
+- **Delete a scan**, trash icon in the header removes the scan in view (with a confirm), from memory and disk
+- **Full fidelity**, saved scans restore tech list, headers, cookies, TLS, APIs, recon (DNS/WHOIS/security/subdomains/ports/staging), and network requests
+- **Save HTML source**, optional setting (off by default) to also persist raw HTML (~500 KB extra per scan)
 
 ---
 
 ### 📋 Copy & Export
 
-- **Long-press any value** — select and copy any single-line value natively (headers, cookies, API endpoints, TLS fields, URLs, tech names) — no per-field button clutter
-- **Bulk copy** — copy buttons on data-heavy tabs copy the whole tab at once
-- **Export report** — tap the share icon in the header after any scan to export a full styled HTML report covering all findings
+- **Long-press any value**, select and copy any single-line value natively (headers, cookies, API endpoints, TLS fields, URLs, tech names), no per-field button clutter
+- **Bulk copy**, copy buttons on data-heavy tabs copy the whole tab at once
+- **Export report**, tap the share icon in the header after any scan to export a full styled HTML report covering all findings
 
 ---
 
@@ -301,7 +301,7 @@ Two modes for crafting and replaying HTTP requests:
 
 **WIZARD mode**
 - Visual request builder: URL, method chips, header management, body editor
-- Pre-populated from scan results — URL, method, and captured headers seeded automatically
+- Pre-populated from scan results, URL, method, and captured headers seeded automatically
 - Common headers quick-add chips (User-Agent, Accept, Content-Type, Authorization, etc.)
 
 **REQ / RES Intel sub-tab**
@@ -351,19 +351,19 @@ URL input / Chrome Share intent
 | Fingerprint DB | enthec/webappanalyzer (bundled as assets) |
 | Image loading | Coil |
 | Min SDK | API 26 (Android 8.0) |
-| Backend | None — everything runs on-device |
+| Backend | None, everything runs on-device |
 
 ---
 
 ## Installation
 
-### Option A — Install APK directly
+### Option A: Install APK directly
 
 1. Download the latest APK from [Releases](https://github.com/naturalstate/ecliptic/releases)
 2. Enable **Install from unknown sources** on your Android device
 3. Install and open Ecliptic
 
-### Option B — Build from source
+### Option B: Build from source
 
 ```bash
 git clone https://github.com/naturalstate/ecliptic.git
@@ -394,11 +394,11 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 
 **Spider a site**
 1. After a scan, open **INTEL → SPIDER**
-2. Tap **Start** — Ecliptic seeds from the sitemap (if any) and follows links
+2. Tap **Start**, Ecliptic seeds from the sitemap (if any) and follows links
 3. Pause/Stop anytime; tap copy to export the URL list
 
 **Recon & enumeration**
-1. Open **INTEL → RECON** — DNS/email security, WHOIS, subdomains and hosting load automatically
+1. Open **INTEL → RECON**, DNS/email security, WHOIS, subdomains and hosting load automatically
 2. Tap **Scan common ports** to probe alt ports, or pick a **staging** depth (Quick / Standard / Deep) to enumerate pre-prod hosts
 3. Only run port/staging enumeration against hosts you own or are authorized to test
 
@@ -408,20 +408,20 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 
 ## Roadmap
 
-- [x] Scan history — persistent across sessions with ← → navigation, delete
-- [x] Export scan report — full HTML report via share sheet
-- [x] Copy — long-press any value plus per-tab bulk copy
-- [x] Spider — crawl a site into a page map
+- [x] Scan history, persistent across sessions with ← → navigation, delete
+- [x] Export scan report, full HTML report via share sheet
+- [x] Copy, long-press any value plus per-tab bulk copy
+- [x] Spider, crawl a site into a page map
 - [x] WebSocket detection (API tab)
-- [x] Security-depth analysis — CSP / CORS / SRI / HSTS / clickjacking
-- [x] DNS & email security — SPF / DMARC / DKIM / DNSSEC / CAA
-- [x] Trust signals — domain age, DNSSEC, HTTPS, email auth, look-alikes
+- [x] Security-depth analysis, CSP / CORS / SRI / HSTS / clickjacking
+- [x] DNS & email security, SPF / DMARC / DKIM / DNSSEC / CAA
+- [x] Trust signals, domain age, DNSSEC, HTTPS, email auth, look-alikes
 - [x] Subdomains, IP neighbors & hosting intel
 - [x] Alt-port probe & staging-host enumeration
-- [ ] Active subdomain brute-force — bundled SecLists wordlists, start/pause/stop
+- [ ] Active subdomain brute-force, bundled SecLists wordlists, start/pause/stop
 - [ ] Authorized-use acknowledgement gate (pre-Play)
-- [ ] Authenticated scans — cookie / token / interactive login
-- [ ] Scan comparison — diff two saved scans side-by-side
+- [ ] Authenticated scans, cookie / token / interactive login
+- [ ] Scan comparison, diff two saved scans side-by-side
 - [ ] Favicon hash (Shodan-style) identification
 - [ ] Server-Sent Events (SSE) detection
 - [ ] Service Worker / PWA detection
