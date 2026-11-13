@@ -94,6 +94,8 @@ Powered by the [enthec/webappanalyzer](https://github.com/enthec/webappanalyzer)
 
 **Smart grouping:** Major CMS platforms (WordPress, Shopify, Drupal, Joomla, etc.) sort to the top of their category. Payment card brands (Visa, Mastercard, Amex, Discover, etc.) are grouped into a single "Major Credit Cards" entry.
 
+**Full logo coverage:** every detected technology shows its real logo. The lean icons from the Wappalyzer / webappanalyzer icon set are bundled for offline use; the few oversized ones load from the upstream repo on demand (cached). No more letter-placeholders for things like Next.js, Open Graph or Google Tag Manager.
+
 ---
 
 ### 🛡️ Security Headers
