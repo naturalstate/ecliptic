@@ -13,6 +13,10 @@
       <stop stop-color="#21AD9A"/>
       <stop offset="1" stop-color="#10B981"/>
     </linearGradient>
+    <linearGradient id="ecg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#3BEBC9"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
   </defs>
 
   <!-- card -->
@@ -25,8 +29,14 @@
     <rect x="0" y="54" width="34" height="3" rx="1.5" fill="url(#accent)"/>
     <text x="46" y="60" fill="#8a9099" font-size="13" letter-spacing="3" font-weight="600">ANDROID · WEBVIEW · ON-DEVICE</text>
 
-    <!-- wordmark -->
-    <text x="-2" y="150" fill="url(#word)" font-size="84" font-weight="800" letter-spacing="-2">Ecliptic</text>
+    <!-- logo mark (matches the app launcher icon) + wordmark.
+         Plain <g transform> (no nested <svg>) so it never clips across SVG renderers. -->
+    <g transform="translate(-4,90) scale(1.9375)">
+      <path fill-rule="evenodd" fill="url(#ecg)"
+            d="M16,16 m-13,0 a13,13 0 1,0 26,0 a13,13 0 1,0 -26,0 M22.5,10.4 m-11.14,0 a11.14,11.14 0 1,0 22.28,0 a11.14,11.14 0 1,0 -22.28,0"/>
+      <circle cx="27.1" cy="5.8" r="2.34" fill="#00E5C8"/>
+    </g>
+    <text x="72" y="150" fill="url(#word)" font-size="84" font-weight="800" letter-spacing="-2">Ecliptic</text>
 
     <!-- tagline -->
     <text x="0" y="196" fill="#E8EAED" font-size="24" font-weight="600">Fingerprint any website from your phone.</text>
