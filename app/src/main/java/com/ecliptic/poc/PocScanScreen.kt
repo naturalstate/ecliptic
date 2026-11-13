@@ -1155,7 +1155,7 @@ private fun TechRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                TechIcon(techName = tech.name, tint = iconTint, modifier = Modifier.size(24.dp))
+                TechIcon(techName = tech.name, iconFile = tech.icon, tint = iconTint, modifier = Modifier.size(24.dp))
                 Text(
                     text = tech.name,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -1213,7 +1213,7 @@ private fun TechDetailSheet(tech: Technology, scanUrl: String = "", onDismiss: (
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                TechIcon(techName = tech.name, tint = iconTint, modifier = Modifier.size(44.dp))
+                TechIcon(techName = tech.name, iconFile = tech.icon, tint = iconTint, modifier = Modifier.size(44.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = tech.name,
@@ -1550,21 +1550,32 @@ private fun ScannedBar(statusCode: String?, techCount: Int, onEdit: () -> Unit) 
 @Composable
 private fun TechIcon(
     techName: String,
+    iconFile: String?,
     tint: androidx.compose.ui.graphics.Color,
     modifier: Modifier = Modifier,
 ) {
-    val iconUrl = remember(techName) { DevIconMapper.iconUrlFor(techName) }
-    var showFallback by remember(iconUrl) { mutableStateOf(iconUrl == null) }
+    // Resolve in order: bundled Wappalyzer icon → upstream Wappalyzer icon (for the
+    // oversize ones we didn't bundle) → devicon/Simple Icons by name → letter badge.
+    // Real brand logos render in full colour (no tint); only the letter fallback is tinted.
+    val candidates = remember(techName, iconFile) {
+        buildList {
+            iconFile?.takeIf { it.isNotBlank() }?.let {
+                add(DevIconMapper.techAssetUrl(it))
+                add(DevIconMapper.techRemoteUrl(it))
+            }
+            DevIconMapper.iconUrlFor(techName)?.let { add(it) }
+        }
+    }
+    var idx by remember(candidates) { mutableIntStateOf(0) }
 
-    if (showFallback) {
+    if (candidates.isEmpty() || idx >= candidates.size) {
         TechIconFallback(techName = techName, tint = tint, modifier = modifier)
     } else {
         AsyncImage(
-            model = iconUrl!!,
+            model = candidates[idx],
             contentDescription = null,
             modifier = modifier,
-            colorFilter = ColorFilter.tint(tint, BlendMode.SrcIn),
-            onError = { showFallback = true },
+            onError = { idx++ },
         )
     }
 }

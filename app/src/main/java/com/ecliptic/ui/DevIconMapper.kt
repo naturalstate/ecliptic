@@ -1,6 +1,27 @@
 package com.ecliptic.ui
 
+import android.net.Uri
+
 object DevIconMapper {
+
+    // ── Wappalyzer / webappanalyzer icon set ───────────────────────────────────
+    // Every technology in our bundled DB carries an `icon` filename (e.g. "React.svg",
+    // "Open Graph.png"). Lean icons are bundled under assets/tech_icons/ (sanitised
+    // names); the rare oversized ones are fetched from the upstream repo at runtime
+    // (Coil caches them). This gives full logo coverage, matching Wappalyzer.
+    private const val WAPP_RAW =
+        "https://raw.githubusercontent.com/enthec/webappanalyzer/main/src/images/icons/"
+
+    /** Filename as stored under assets/tech_icons/ (kept in sync with the bundler). */
+    private fun sanitizeAsset(iconFile: String): String =
+        iconFile.replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+    /** Local bundled-asset URL for a DB icon filename. May not exist (oversize icons). */
+    fun techAssetUrl(iconFile: String): String =
+        "file:///android_asset/tech_icons/" + sanitizeAsset(iconFile)
+
+    /** Upstream URL for any DB icon filename (covers everything the asset bundle omits). */
+    fun techRemoteUrl(iconFile: String): String = WAPP_RAW + Uri.encode(iconFile)
 
     private val slugMap = mapOf(
         // JS Frameworks
