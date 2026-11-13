@@ -452,6 +452,12 @@ Requires Android Studio Hedgehog or later, JDK 17+.
 
 ---
 
+## Disclaimer
+
+Ecliptic's results are a **best-effort approximation, not a guarantee**. Detection is heuristic and based on a single page snapshot, so there will be false positives and missed technologies. The build-origin estimate, cookie classification, staging/port enumeration and similar features are informed guesses, not authoritative facts. Verify anything important independently before relying on it. Use the recon features only against hosts you own or are authorized to test.
+
+---
+
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first.
