@@ -10,9 +10,33 @@ object Extractor {
 
     /**
      * severity: "alert" (secrets), "warn" (tokens), "info" (emails/comments/IPs).
-     * origin: where it was found, e.g. "HTML" or a script filename — for provenance.
+     * origin: where it was found, e.g. "HTML" or a script URL — for provenance.
+     * line: 0-based line number of the match within the source (for jump-to-line); -1 = unknown.
      */
-    data class StringFinding(val category: String, val value: String, val severity: String = "info", val origin: String = "")
+    data class StringFinding(
+        val category: String,
+        val value: String,
+        val severity: String = "info",
+        val origin: String = "",
+        val line: Int = -1,
+    )
+
+    /** 0-based line number of a character offset within [text]. */
+    private fun lineOf(text: String, offset: Int): Int =
+        if (offset <= 0) 0 else text.substring(0, offset.coerceAtMost(text.length)).count { it == '\n' }
+
+    // Well-known third-party / vendor script files whose contents are library boilerplate
+    // (licenses, minified framework code) — pointless to mine for a site's own strings.
+    private val VENDOR_FILE = Regex(
+        "(?i)(?:^|/)(?:jquery|jquery[.-]?(?:migrate|ui)|bootstrap|popper|react(?:-dom)?|react\\.production|" +
+        "vue|angular|zone|polyfill|polyfills|core-js|modernizr|lodash|underscore|moment|d3|three|" +
+        "swiper|slick|owl\\.carousel|fontawesome|all\\.min|gsap|tween|pixi|chart|hammer|" +
+        "gtag|gtm|analytics|ga\\.js|fbevents|fbq|hotjar|clarity|recaptcha|cookieconsent|" +
+        "closure|goog|base\\.js|runtime|vendors?|chunk-vendors|framework|webpack|commons)[.\\-][^/]*\\.js(?:$|\\?)"
+    )
+
+    /** True when a script URL is a known library/vendor bundle not worth string-mining. */
+    fun isVendorScript(url: String): Boolean = VENDOR_FILE.containsMatchIn(url)
 
     private val EMAIL = Regex("""[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}""")
 
@@ -61,25 +85,31 @@ object Extractor {
         val out = LinkedHashSet<StringFinding>()
 
         for ((name, re, sev) in KEY_PATTERNS) {
-            for (m in re.findAll(text).take(30)) out += StringFinding(name, m.value.trim().take(140), sev, origin)
+            for (m in re.findAll(text).take(30)) out += StringFinding(name, m.value.trim().take(140), sev, origin, lineOf(text, m.range.first))
         }
-        for (m in JWT.findAll(text).take(40)) out += StringFinding("JWT", m.value.take(160), "warn", origin)
+        for (m in JWT.findAll(text).take(40)) out += StringFinding("JWT", m.value.take(160), "warn", origin, lineOf(text, m.range.first))
         for (m in EMAIL.findAll(text).take(100)) {
             if (looksLikeFilename(m.value)) continue
-            out += StringFinding("Email", m.value, origin = origin)
+            out += StringFinding("Email", m.value, origin = origin, line = lineOf(text, m.range.first))
         }
-        IPV4.findAll(text).map { it.value }
-            .filter { !it.startsWith("0.") && !it.startsWith("255.255.255") }
-            .distinct().take(60)
-            .forEach { out += StringFinding("IP Address", it, origin = origin) }
+        run {
+            val seen = HashSet<String>()
+            for (m in IPV4.findAll(text).take(200)) {
+                val v = m.value
+                if (v.startsWith("0.") || v.startsWith("255.255.255")) continue
+                if (!seen.add(v)) continue
+                out += StringFinding("IP Address", v, origin = origin, line = lineOf(text, m.range.first))
+                if (seen.size >= 60) break
+            }
+        }
 
         if (includeComments) {
-            fun addComment(raw: String) {
+            fun addComment(raw: String, offset: Int) {
                 val c = raw.trim().replace(Regex("""\s+"""), " ")
-                if (c.length in 4..240) out += StringFinding("Comment", c, origin = origin)
+                if (c.length in 4..240) out += StringFinding("Comment", c, origin = origin, line = lineOf(text, offset))
             }
-            COMMENT_HTML.findAll(text).take(80).forEach { addComment(it.groupValues[1]) }
-            COMMENT_BLOCK.findAll(text).take(80).forEach { addComment(it.groupValues[1]) }
+            COMMENT_HTML.findAll(text).take(80).forEach { addComment(it.groupValues[1], it.range.first) }
+            COMMENT_BLOCK.findAll(text).take(80).forEach { addComment(it.groupValues[1], it.range.first) }
         }
         return out.toList()
     }

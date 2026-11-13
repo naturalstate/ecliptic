@@ -42,6 +42,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.rememberScrollState
@@ -401,6 +402,9 @@ fun PocScanScreen(
     // the search query, and which file (script URL, or "" for the HTML page) to open.
     var pendingSourceQuery by remember(signals?.finalUrl) { mutableStateOf("") }
     var pendingSourceFile by remember(signals?.finalUrl) { mutableStateOf("") }
+    var pendingSourceLine by remember(signals?.finalUrl) { mutableIntStateOf(-1) }
+    // Hoisted so the Strings list keeps its scroll position across subtab switches.
+    val stringsListState = androidx.compose.foundation.lazy.rememberLazyListState()
     var selectedTech by remember { mutableStateOf<Technology?>(null) }
     var isFullScreen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -774,8 +778,8 @@ fun PocScanScreen(
                     "intel_6" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput, onSendToRepeater = { viewModel.prefillRepeater(it); bottomTab = TAB_REPEAT })
                     "intel_7" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls, dns = state.reconData?.dns, asn = state.reconData?.asn, loading = state.reconLoading, onLoad = { viewModel.loadRecon() }) }
                     "intel_8" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), initialQuery = pendingSourceQuery, initialFile = pendingSourceFile, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_1"  -> SelectionContainer { StringsContent(html = signals?.htmlSource ?: "", pageUrl = signals?.finalUrl ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), deepScripts = stringsDeepScripts, onDeepScripts = { stringsDeepScripts = it }, onOpenInSource = { q, file -> pendingSourceQuery = q; pendingSourceFile = file; codeSubTab = 0 }) }
+                    "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), initialQuery = pendingSourceQuery, initialFile = pendingSourceFile, initialLine = pendingSourceLine, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
+                    "code_1"  -> SelectionContainer { StringsContent(html = signals?.htmlSource ?: "", pageUrl = signals?.finalUrl ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), deepScripts = stringsDeepScripts, onDeepScripts = { stringsDeepScripts = it }, onOpenInSource = { q, file, line -> pendingSourceQuery = q; pendingSourceFile = file; pendingSourceLine = line; codeSubTab = 0 }, listState = stringsListState) }
                     "code_2"  -> SelectionContainer { JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap()) }
                     "code_3"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_4"  -> SelectionContainer { NetContent(scanRequests = signals?.networkRequests ?: emptyList(), liveRequests = liveNetworkRequests) }
@@ -2520,7 +2524,8 @@ private fun StringsContent(
     scriptUrls: List<String>,
     deepScripts: List<Pair<String, String>>,   // (url, body) of fetched JS, for provenance
     onDeepScripts: (List<Pair<String, String>>) -> Unit,
-    onOpenInSource: (String, String) -> Unit = { _, _ -> },   // (query, fileUrl; "" = HTML)
+    onOpenInSource: (String, String, Int) -> Unit = { _, _, _ -> },  // (query, fileUrl ""=HTML, line)
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val scope = rememberCoroutineScope()
     var deepLoading by remember { mutableStateOf(false) }
@@ -2528,12 +2533,14 @@ private fun StringsContent(
     var selected by remember { mutableStateOf<Extractor.StringFinding?>(null) }
 
     // Each finding carries the URL of the file it came from in `origin` (the page URL for
-    // HTML, the script URL for JS), so the detail sheet can show the exact file and jump
-    // to it in the Source viewer.
+    // HTML, the script URL for JS) plus its line number, so the detail sheet can show the
+    // exact file and jump to the right line in the Source viewer. Duplicates (same value)
+    // are collapsed, keeping the first file/line they were seen in.
     val htmlOrigin = pageUrl.ifBlank { "HTML" }
     val findings = remember(html, pageUrl, deepScripts) {
         (Extractor.findStrings(html, origin = htmlOrigin) +
-            deepScripts.flatMap { (url, body) -> Extractor.findStrings(body, origin = url) }).distinct()
+            deepScripts.flatMap { (url, body) -> Extractor.findStrings(body, origin = url) })
+            .distinctBy { it.category to it.value }
     }
     val grouped = findings.groupBy { it.category }.toList()
 
@@ -2556,7 +2563,10 @@ private fun StringsContent(
                     onClick = {
                         deepLoading = true
                         scope.launch {
-                            val fetched = scriptUrls.filter { it.startsWith("http") }.take(8)
+                            // Skip known vendor/library bundles — their strings (licenses,
+                            // framework boilerplate) are noise, not the site's own code.
+                            val fetched = scriptUrls.filter { it.startsWith("http") && !Extractor.isVendorScript(it) }
+                                .take(8)
                                 .map { url -> url to fetchTextContent(url) }
                                 .filter { it.second.isNotBlank() }
                             onDeepScripts(fetched)
@@ -2590,6 +2600,7 @@ private fun StringsContent(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -2651,7 +2662,7 @@ private fun sourceLabel(origin: String, pageUrl: String): String {
 private fun StringDetailSheet(
     finding: Extractor.StringFinding,
     pageUrl: String,
-    onOpenInSource: (String, String) -> Unit,
+    onOpenInSource: (String, String, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -2707,7 +2718,7 @@ private fun StringDetailSheet(
                     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                 }
                 SpiderButton("Find in source", Icons.Filled.Search) {
-                    onOpenInSource(finding.value.trim().take(60), if (isHtmlOrigin) "" else fileUrl)
+                    onOpenInSource(finding.value.trim().take(60), if (isHtmlOrigin) "" else fileUrl, finding.line)
                     onDismiss()
                 }
             }
@@ -2919,15 +2930,22 @@ private fun ReconContent(
                         if (bo.note.isNotBlank()) {
                             Text(bo.note, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f), fontSize = 10.sp, lineHeight = 14.sp)
                         }
+                        // What the current result looked at.
+                        Text(
+                            "Analyzed: " + if (bo.analyzedJs) "HTML + headers + bundled JS" else "HTML + headers (quick pass)",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 10.sp,
+                        )
                         val showable = bo.verdict == com.ecliptic.scanner.BuildOriginAnalyzer.Verdict.HEAVY ||
                             bo.verdict == com.ecliptic.scanner.BuildOriginAnalyzer.Verdict.MIXED
                         if (showable && bo.samples.isNotEmpty()) {
                             SpiderButton("Show flagged comments (${bo.samples.size})", Icons.Filled.Search) { showBoSamples = true }
                         }
                     }
+                    // Quick pass (auto) reads HTML + headers only; this fetches the site's
+                    // JS bundles and re-runs on HTML + JS together for a stronger read.
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SpiderButton(
-                            if (bo?.analyzedJs == true) "Re-analyze JS" else "Analyze bundled JS",
+                            if (bo?.analyzedJs == true) "Re-run deep scan" else "Deep scan (+ fetch JS)",
                             Icons.Filled.Search,
                         ) { if (!buildOriginLoading) onAnalyzeBuildOrigin() }
                         if (buildOriginLoading) CircularProgressIndicator(Modifier.size(16.dp), color = Teal, strokeWidth = 2.dp)
@@ -3683,6 +3701,7 @@ private fun SourceContent(
     cssUrls: List<String> = emptyList(),
     initialQuery: String = "",
     initialFile: String = "",
+    initialLine: Int = -1,
     isFullScreen: Boolean = false,
     onToggleFullScreen: () -> Unit = {},
 ) {
@@ -3700,6 +3719,7 @@ private fun SourceContent(
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val listState = rememberLazyListState()
+    val chipListState = rememberLazyListState()
 
     val isHtml = selectedFile == "__html__"
     val isCss = selectedFile in cssUrls
@@ -3710,6 +3730,15 @@ private fun SourceContent(
     val matchIndices = remember(searchQuery, lines) {
         if (searchQuery.length < 2) emptyList()
         else lines.indices.filter { lines[it].contains(searchQuery, ignoreCase = true) }
+    }
+
+    // Index of the selected file in the chip row (HTML, then CSS, then scripts).
+    val selectedChipIndex = remember(selectedFile, cssUrls, scriptUrls) {
+        when {
+            isHtml -> 0
+            selectedFile in cssUrls -> 1 + cssUrls.take(20).indexOf(selectedFile).coerceAtLeast(0)
+            else -> 1 + cssUrls.take(20).size + scriptUrls.take(30).indexOf(selectedFile).coerceAtLeast(0)
+        }
     }
 
     // Load the jumped-to remote file (from a Strings "Find in source") so its content
@@ -3730,10 +3759,27 @@ private fun SourceContent(
         if (matchIndices.isNotEmpty()) listState.animateScrollToItem(matchIndices[currentMatchIdx])
     }
 
+    // Auto-focus the active file chip so it's obvious which file is open.
+    LaunchedEffect(selectedChipIndex) {
+        runCatching { chipListState.animateScrollToItem(selectedChipIndex.coerceAtLeast(0)) }
+    }
+
+    // Jump to the exact line a Strings finding came from (declared last so it wins over
+    // the search auto-scroll on the initial open). Re-runs once the remote file loads.
+    LaunchedEffect(initialLine, selectedFile, currentContent) {
+        val fileMatches = (initialFile.isBlank() && isHtml) || selectedFile == initialFile
+        if (initialLine in lines.indices && fileMatches) {
+            listState.scrollToItem(initialLine)
+            val mi = matchIndices.indexOfFirst { it == initialLine }
+            if (mi >= 0) currentMatchIdx = mi
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // File selector
         if (scriptUrls.isNotEmpty() || cssUrls.isNotEmpty()) {
             LazyRow(
+                state = chipListState,
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
