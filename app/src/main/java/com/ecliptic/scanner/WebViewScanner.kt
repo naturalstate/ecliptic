@@ -52,7 +52,7 @@ internal val httpClientNoRedirect = httpClient.newBuilder()
 // obvious bot UAs. We try the browser UA first, then fall back to a plain tool UA.
 private const val BROWSER_UA = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 " +
     "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-private const val FALLBACK_UA = "Ecliptic/1.0 (+https://ryand202.sg-host.com/ecliptic/)"
+private const val FALLBACK_UA = "Ecliptic/1.0 (+https://naturalstate.github.io/ecliptic/)"
 private val WAF_BLOCK_CODES = setOf(403, 429, 503, 520, 521, 522, 523, 524, 525, 526)
 
 // Builds the full harvest JS injected after onPageFinished

@@ -57,7 +57,7 @@ class SpiderEngine(private val scope: CoroutineScope) {
         // Some WAFs (e.g. Cloudflare Bot Fight Mode) 520/403 browser-looking UAs that
         // can't solve a JS challenge, while allowing a plain tool UA. Others do the
         // opposite. So we try the browser UA first and fall back to this on failure.
-        private const val FALLBACK_UA = "Ecliptic/1.0 (+https://ryand202.sg-host.com/ecliptic/)"
+        private const val FALLBACK_UA = "Ecliptic/1.0 (+https://naturalstate.github.io/ecliptic/)"
     }
 
     private val _state = MutableStateFlow(SpiderState())

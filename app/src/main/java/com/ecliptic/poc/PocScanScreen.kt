@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -395,6 +396,8 @@ fun PocScanScreen(
     // Deep-scan JS results for the Strings tab, hoisted here (keyed per scan) so they
     // survive switching between Code subtabs, which disposes the subtab content.
     var stringsDeepText by remember(signals?.finalUrl) { mutableStateOf("") }
+    // Seeded into the Source viewer's filter when "Find in source" is tapped on a Strings finding.
+    var pendingSourceQuery by remember(signals?.finalUrl) { mutableStateOf("") }
     var selectedTech by remember { mutableStateOf<Technology?>(null) }
     var isFullScreen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -758,16 +761,18 @@ fun PocScanScreen(
                         portsLoading = state.portsLoading,
                         stagingLoading = state.stagingLoading,
                         subsLoading = state.subsLoading,
+                        buildOriginLoading = state.buildOriginLoading,
                         onScanPorts = { viewModel.scanPorts() },
                         onEnumStaging = { tier -> viewModel.enumStaging(tier) },
                         onFindSubdomains = { viewModel.findSubdomains() },
+                        onAnalyzeBuildOrigin = { viewModel.analyzeBuildOrigin() },
                     )
                     "intel_5" -> SelectionContainer { ParamContent(html = signals?.htmlSource ?: "") }
                     "intel_6" -> SpiderContent(viewModel = viewModel, url = signals?.finalUrl ?: urlInput, onSendToRepeater = { viewModel.prefillRepeater(it); bottomTab = TAB_REPEAT })
                     "intel_7" -> SelectionContainer { NetworkContent(url = signals?.finalUrl ?: "", html = signals?.htmlSource ?: "", tls = signals?.tls, dns = state.reconData?.dns, asn = state.reconData?.asn, loading = state.reconLoading, onLoad = { viewModel.loadRecon() }) }
                     "intel_8" -> ReqResContent(rawRequest = rawRequest, signals = signals, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
-                    "code_1"  -> SelectionContainer { StringsContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), deepText = stringsDeepText, onDeepText = { stringsDeepText = it }) }
+                    "code_0"  -> SourceContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), cssUrls = signals?.cssUrls ?: emptyList(), initialQuery = pendingSourceQuery, isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
+                    "code_1"  -> SelectionContainer { StringsContent(html = signals?.htmlSource ?: "", scriptUrls = signals?.scriptUrls ?: emptyList(), deepText = stringsDeepText, onDeepText = { stringsDeepText = it }, onOpenInSource = { pendingSourceQuery = it; codeSubTab = 0 }) }
                     "code_2"  -> SelectionContainer { JsGlobalsContent(globals = signals?.globals ?: emptyMap(), jsProbe = signals?.jsProbe ?: emptyMap()) }
                     "code_3"  -> DomContent(domTreeJson = signals?.domTree ?: "", isFullScreen = isFullScreen, onToggleFullScreen = { isFullScreen = !isFullScreen })
                     "code_4"  -> SelectionContainer { NetContent(scanRequests = signals?.networkRequests ?: emptyList(), liveRequests = liveNetworkRequests) }
@@ -2353,16 +2358,27 @@ private fun ParamContent(html: String) {
 // ─── Strings tab (Code) ───────────────────────────────────────────────────────
 
 @Composable
-private fun StringsContent(html: String, scriptUrls: List<String>, deepText: String, onDeepText: (String) -> Unit) {
+private fun StringsContent(
+    html: String,
+    scriptUrls: List<String>,
+    deepText: String,
+    onDeepText: (String) -> Unit,
+    onOpenInSource: (String) -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     var deepLoading by remember { mutableStateOf(false) }
     val deepScanned = deepText.isNotBlank()
+    var selected by remember { mutableStateOf<Extractor.StringFinding?>(null) }
 
     val findings = remember(html, deepText) {
-        (Extractor.findStrings(html) +
-            if (deepText.isNotBlank()) Extractor.findStrings(deepText) else emptyList()).distinct()
+        (Extractor.findStrings(html, origin = "HTML") +
+            if (deepText.isNotBlank()) Extractor.findStrings(deepText, origin = "JS") else emptyList()).distinct()
     }
     val grouped = findings.groupBy { it.category }.toList()
+
+    selected?.let { f ->
+        StringDetailSheet(finding = f, onOpenInSource = onOpenInSource, onDismiss = { selected = null })
+    }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -2429,13 +2445,95 @@ private fun StringsContent(html: String, scriptUrls: List<String>, deepText: Str
                         }
                     }
                     items(items) { f ->
-                        Text(
-                            f.value,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { selected = f }.padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Text(
+                                f.value,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (f.origin.isNotBlank()) {
+                                Text(
+                                    f.origin,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    fontSize = 9.sp, fontFamily = SpaceGrotesk,
+                                    modifier = Modifier.padding(start = 8.dp, top = 1.dp),
+                                )
+                            }
+                        }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Detail sheet for a single Strings finding: shows its category, severity, origin
+ * (HTML vs JS), the full value, and actions — copy the value, find it in the Source
+ * viewer, or open it in a browser when it looks like a URL/email.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StringDetailSheet(
+    finding: Extractor.StringFinding,
+    onOpenInSource: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val sheetState = rememberModalBottomSheetState()
+    val accent = when (finding.severity) {
+        "alert" -> MaterialTheme.colorScheme.error
+        "warn" -> Amber
+        else -> Teal
+    }
+    val looksLinkable = finding.category == "Email" ||
+        finding.value.startsWith("http", ignoreCase = true) ||
+        Regex("""^[a-z0-9.\-]+\.[a-z]{2,}(/|$)""", RegexOption.IGNORE_CASE).containsMatchIn(finding.value)
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(finding.category, color = accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Surface(color = accent.copy(alpha = 0.14f), shape = RoundedCornerShape(6.dp)) {
+                    Text(finding.severity.uppercase(), color = accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                }
+                Spacer(Modifier.weight(1f))
+                if (finding.origin.isNotBlank()) {
+                    Text("found in ${finding.origin}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = SpaceGrotesk)
+                }
+            }
+            Surface(color = MaterialTheme.colorScheme.background, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                SelectionContainer {
+                    Text(
+                        finding.value,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 12.sp, fontFamily = FontFamily.Monospace, lineHeight = 17.sp,
+                        modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()).padding(12.dp),
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SpiderButton("Copy value", Icons.Filled.ContentCopy) {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText(finding.category, finding.value))
+                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                }
+                SpiderButton("Find in source", Icons.Filled.Search) {
+                    onOpenInSource(finding.value.trim().take(60))
+                    onDismiss()
+                }
+            }
+            if (looksLinkable) {
+                SpiderButton("Open in browser", Icons.Filled.OpenInBrowser) {
+                    val target = if (finding.category == "Email") "mailto:${finding.value}"
+                        else if (finding.value.startsWith("http", true)) finding.value else "https://${finding.value}"
+                    runCatching { uriHandler.openUri(target) }
                 }
             }
         }
@@ -2454,9 +2552,11 @@ private fun ReconContent(
     portsLoading: Boolean,
     stagingLoading: Boolean,
     subsLoading: Boolean,
+    buildOriginLoading: Boolean,
     onScanPorts: () -> Unit,
     onEnumStaging: (EnumTier) -> Unit,
     onFindSubdomains: () -> Unit,
+    onAnalyzeBuildOrigin: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val domain = remember(url) {
@@ -2546,6 +2646,54 @@ private fun ReconContent(
                     }
                 }
             }
+        }
+
+        // ── Build origin (LLM / vibe-coding authorship estimate) ───────────────
+        item { NetSectionHeader("BUILD ORIGIN", null, loading || buildOriginLoading) }
+        item {
+            val bo = data?.buildOrigin
+            Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp)) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (bo == null) {
+                        Text(if (loading) "Analyzing…" else "Not analyzed", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    } else {
+                        val accent = when (bo.verdict) {
+                            com.ecliptic.scanner.BuildOriginAnalyzer.Verdict.PLATFORM -> Amber
+                            com.ecliptic.scanner.BuildOriginAnalyzer.Verdict.HEAVY -> Amber
+                            com.ecliptic.scanner.BuildOriginAnalyzer.Verdict.MIXED -> Teal
+                            com.ecliptic.scanner.BuildOriginAnalyzer.Verdict.MINIMAL -> Teal
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(bo.label, color = accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            if (bo.confidence != "n/a") {
+                                Surface(color = accent.copy(alpha = 0.14f), shape = RoundedCornerShape(6.dp)) {
+                                    Text(bo.confidence.uppercase(), color = accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
+                            }
+                        }
+                        if (bo.evidence.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                bo.evidence.forEach { e ->
+                                    Text("• $e", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 15.sp)
+                                }
+                            }
+                        }
+                        if (bo.note.isNotBlank()) {
+                            Text(bo.note, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f), fontSize = 10.sp, lineHeight = 14.sp)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SpiderButton(
+                            if (bo?.analyzedJs == true) "Re-analyze JS" else "Analyze bundled JS",
+                            Icons.Filled.Search,
+                        ) { if (!buildOriginLoading) onAnalyzeBuildOrigin() }
+                        if (buildOriginLoading) CircularProgressIndicator(Modifier.size(16.dp), color = Teal, strokeWidth = 2.dp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
         }
 
         // Archive.org link
@@ -3292,13 +3440,15 @@ private fun SourceContent(
     html: String,
     scriptUrls: List<String> = emptyList(),
     cssUrls: List<String> = emptyList(),
+    initialQuery: String = "",
     isFullScreen: Boolean = false,
     onToggleFullScreen: () -> Unit = {},
 ) {
     var selectedFile by remember { mutableStateOf("__html__") }
     var remoteContents by remember { mutableStateOf(mapOf<String, String>()) }
     var remoteLoading by remember { mutableStateOf(setOf<String>()) }
-    var searchQuery by remember { mutableStateOf("") }
+    // Seeded from a Strings "Find in source" jump; re-seeds whenever a new value arrives.
+    var searchQuery by remember(initialQuery) { mutableStateOf(initialQuery) }
     var currentMatchIdx by remember { mutableIntStateOf(0) }
     var codeZoom by remember { mutableStateOf(1f) }
 

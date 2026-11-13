@@ -19,8 +19,8 @@ android {
         applicationId = "com.ecliptic"
         minSdk = 26
         targetSdk = 35
-        versionCode = 41
-        versionName = "1.1.9"
+        versionCode = 42
+        versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }

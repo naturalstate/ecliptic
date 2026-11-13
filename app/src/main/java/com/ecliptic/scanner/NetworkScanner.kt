@@ -91,7 +91,7 @@ private val RDAP_ENDPOINTS = listOf(
 
 private val USER_AGENT = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 // Fallback for WAFs (e.g. Cloudflare Bot Fight Mode) that block browser-looking UAs.
-private const val FALLBACK_UA = "Ecliptic/1.0 (+https://ryand202.sg-host.com/ecliptic/)"
+private const val FALLBACK_UA = "Ecliptic/1.0 (+https://naturalstate.github.io/ecliptic/)"
 
 suspend fun fetchRdapInfo(domain: String): RdapResult = withContext(Dispatchers.IO) {
     val encoded = URLEncoder.encode(domain, "UTF-8")
@@ -264,6 +264,7 @@ data class ReconData(
     val staging: List<StagingHost> = emptyList(),
     val stagingChecked: Boolean = false,
     val stagingTier: String? = null,       // highest EnumTier name already enumerated
+    val buildOrigin: BuildOriginAnalyzer.BuildOrigin? = null,  // LLM/vibe-coding authorship estimate
     val fetchedAt: Long = 0L,
 ) {
     val isEmpty: Boolean get() = dns == null && rdap == null && files == null && asn == null &&

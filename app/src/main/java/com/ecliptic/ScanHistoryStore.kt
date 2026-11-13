@@ -294,6 +294,20 @@ private fun ReconData.toJson() = JSONObject().apply {
             staging.forEach { s -> arr.put(JSONObject().put("host", s.host).put("source", s.source).apply { s.ip?.let { put("ip", it) } }) }
         })
     }
+    buildOrigin?.let { bo ->
+        put("buildOrigin", JSONObject().apply {
+            put("verdict", bo.verdict.name)
+            put("label", bo.label)
+            put("confidence", bo.confidence)
+            bo.platform?.let { put("platform", it) }
+            put("minified", bo.minified)
+            put("commentCount", bo.commentCount)
+            put("llmSignalCount", bo.llmSignalCount)
+            put("evidence", JSONArray(bo.evidence))
+            put("note", bo.note)
+            put("analyzedJs", bo.analyzedJs)
+        })
+    }
     put("fetchedAt", fetchedAt)
 }
 
@@ -326,6 +340,21 @@ private fun JSONObject.toReconData() = ReconData(
     } ?: emptyList(),
     stagingChecked = optBoolean("stagingChecked", false),
     stagingTier = optString("stagingTier").ifBlank { null },
+    buildOrigin = optJSONObject("buildOrigin")?.let { o ->
+        com.ecliptic.scanner.BuildOriginAnalyzer.BuildOrigin(
+            verdict = runCatching { com.ecliptic.scanner.BuildOriginAnalyzer.Verdict.valueOf(o.optString("verdict")) }
+                .getOrDefault(com.ecliptic.scanner.BuildOriginAnalyzer.Verdict.INCONCLUSIVE),
+            label = o.optString("label"),
+            confidence = o.optString("confidence", "n/a"),
+            platform = o.optString("platform").ifBlank { null },
+            minified = o.optBoolean("minified", false),
+            commentCount = o.optInt("commentCount", 0),
+            llmSignalCount = o.optInt("llmSignalCount", 0),
+            evidence = o.optJSONArray("evidence")?.toStringList() ?: emptyList(),
+            note = o.optString("note"),
+            analyzedJs = o.optBoolean("analyzedJs", false),
+        )
+    },
     fetchedAt = optLong("fetchedAt", 0L),
 )
 

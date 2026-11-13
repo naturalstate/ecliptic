@@ -78,6 +78,7 @@ data class ScanUiState(
     val portsLoading: Boolean = false,
     val stagingLoading: Boolean = false,
     val subsLoading: Boolean = false,
+    val buildOriginLoading: Boolean = false,
 )
 
 class ScanViewModel(application: Application) : AndroidViewModel(application) {
@@ -176,7 +177,12 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
             // Augment crt.sh subdomains with any found in the scanned page source itself
             // (links/attrs/inline JS), so e.g. dev.site.com in the HTML shows up automatically.
             val parsed = host?.let { parseSubdomains(it, sourceBlob(sig)) } ?: emptyList()
-            val data = fetched.copy(subdomains = (fetched.subdomains + parsed).distinct().sorted())
+            // Build-origin estimate from HTML + headers + script URLs (no extra fetch).
+            val origin = com.ecliptic.scanner.BuildOriginAnalyzer.analyze(buildOriginText(sig), analyzedJs = false)
+            val data = fetched.copy(
+                subdomains = (fetched.subdomains + parsed).distinct().sorted(),
+                buildOrigin = origin,
+            )
             _state.update { it.copy(reconData = data, reconLoading = false) }
             // Persist into the current snapshot (so revisiting restores it) + disk.
             if (currentSnapshotIdx in snapshots.indices) {
@@ -192,6 +198,36 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         append(sig.htmlSource)
         append('\n'); append(sig.scriptUrls.joinToString("\n"))
         append('\n'); append(sig.cssUrls.joinToString("\n"))
+    }
+
+    /** Source text for build-origin analysis: HTML + response headers + script URLs. */
+    private fun buildOriginText(sig: com.ecliptic.scanner.RawSignals, extraJs: String = ""): String = buildString {
+        append(sig.htmlSource)
+        append('\n'); append(sig.headers.entries.joinToString("\n") { "${it.key}: ${it.value}" })
+        append('\n'); append(sig.scriptUrls.joinToString("\n"))
+        if (extraJs.isNotBlank()) { append('\n'); append(extraJs) }
+    }
+
+    /**
+     * Deeper build-origin pass: fetches the top script bundles and re-runs the analyzer
+     * with their bodies included, so comment-style heuristics see the real code (not just
+     * HTML). Manual, like the Strings deep scan. Merges the result into cached recon.
+     */
+    fun analyzeBuildOrigin() {
+        if (_state.value.buildOriginLoading) return
+        val sig = _state.value.signals ?: return
+        _state.update { it.copy(buildOriginLoading = true) }
+        viewModelScope.launch {
+            val js = StringBuilder()
+            sig.scriptUrls.filter { it.startsWith("http") }.take(8).forEach {
+                js.append(runCatching { com.ecliptic.scanner.fetchTextContent(it) }.getOrDefault("")).append('\n')
+            }
+            val origin = com.ecliptic.scanner.BuildOriginAnalyzer.analyze(
+                buildOriginText(sig, js.toString()), analyzedJs = true,
+            )
+            updateReconAndPersist { it.copy(buildOrigin = origin) }
+            _state.update { it.copy(buildOriginLoading = false) }
+        }
     }
 
     /**
@@ -295,6 +331,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                     rawRequest = "", wizardUrl = "", wizardHeaders = emptyList(),
                     reconData = null, reconLoading = false,
                     portsLoading = false, stagingLoading = false,
+                    subsLoading = false, buildOriginLoading = false,
                     historySize = 0, historyPosition = 0,
                 )
             }

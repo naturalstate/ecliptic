@@ -3,7 +3,7 @@
 Internal notes for the Play Console submission. Not shipped in the app.
 
 ## Privacy policy
-- Hosted file: `privacy.html` (upload to the site, e.g. `https://ryand202.sg-host.com/ecliptic/privacy.html`).
+- Hosted file: `privacy.html` (served from GitHub Pages at `https://naturalstate.github.io/ecliptic/privacy.html`).
 - The in-app **About → Privacy Policy** link points to that URL — keep them in sync.
 - Enter the same URL in Play Console → App content → Privacy policy.
 

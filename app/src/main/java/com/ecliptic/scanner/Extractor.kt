@@ -8,8 +8,11 @@ package com.ecliptic.scanner
  */
 object Extractor {
 
-    /** severity: "alert" (secrets), "warn" (tokens), "info" (emails/comments/IPs). */
-    data class StringFinding(val category: String, val value: String, val severity: String = "info")
+    /**
+     * severity: "alert" (secrets), "warn" (tokens), "info" (emails/comments/IPs).
+     * origin: where it was found, e.g. "HTML" or a script filename — for provenance.
+     */
+    data class StringFinding(val category: String, val value: String, val severity: String = "info", val origin: String = "")
 
     private val EMAIL = Regex("""[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}""")
     private val JWT = Regex("""eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{6,}""")
@@ -35,24 +38,24 @@ object Extractor {
     private val PARAM_IN_URL = Regex("""[?&]([A-Za-z0-9_.\-\[\]]{1,40})=([^&"'\s<>]{0,60})""")
     private val INPUT_NAME = Regex("""(?i)<(?:input|select|textarea)\b[^>]*\bname\s*=\s*["']([^"']{1,50})["']""")
 
-    fun findStrings(text: String, includeComments: Boolean = true): List<StringFinding> {
+    fun findStrings(text: String, includeComments: Boolean = true, origin: String = ""): List<StringFinding> {
         if (text.isBlank()) return emptyList()
         val out = LinkedHashSet<StringFinding>()
 
         for ((name, re, sev) in KEY_PATTERNS) {
-            for (m in re.findAll(text).take(30)) out += StringFinding(name, m.value.trim().take(140), sev)
+            for (m in re.findAll(text).take(30)) out += StringFinding(name, m.value.trim().take(140), sev, origin)
         }
-        for (m in JWT.findAll(text).take(40)) out += StringFinding("JWT", m.value.take(160), "warn")
-        for (m in EMAIL.findAll(text).take(100)) out += StringFinding("Email", m.value)
+        for (m in JWT.findAll(text).take(40)) out += StringFinding("JWT", m.value.take(160), "warn", origin)
+        for (m in EMAIL.findAll(text).take(100)) out += StringFinding("Email", m.value, origin = origin)
         IPV4.findAll(text).map { it.value }
             .filter { !it.startsWith("0.") && !it.startsWith("255.255.255") }
             .distinct().take(60)
-            .forEach { out += StringFinding("IP Address", it) }
+            .forEach { out += StringFinding("IP Address", it, origin = origin) }
 
         if (includeComments) {
             fun addComment(raw: String) {
                 val c = raw.trim().replace(Regex("""\s+"""), " ")
-                if (c.length in 4..240) out += StringFinding("Comment", c)
+                if (c.length in 4..240) out += StringFinding("Comment", c, origin = origin)
             }
             COMMENT_HTML.findAll(text).take(80).forEach { addComment(it.groupValues[1]) }
             COMMENT_BLOCK.findAll(text).take(80).forEach { addComment(it.groupValues[1]) }
