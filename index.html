@@ -119,6 +119,18 @@
       border-radius: 10px; text-decoration: none; transition: opacity 0.15s, transform 0.15s, box-shadow 0.2s;
     }
     .btn-play:hover { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 8px 30px rgba(0,229,200,0.25); }
+    /* Play Store not live yet: muted, non-interactive, with an "in review" tag. */
+    .btn-play.pending { background: var(--surface); color: var(--muted); border: 1px solid var(--border); cursor: not-allowed; box-shadow: none; }
+    .btn-play.pending:hover { opacity: 1; transform: none; box-shadow: none; }
+    .pending-tag { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.04em; background: rgba(217,146,10,0.12); color: #e0a93a; border: 1px solid rgba(217,146,10,0.3); border-radius: 5px; padding: 2px 7px; margin-left: 2px; white-space: nowrap; }
+    /* Primary working download → GitHub Releases APK. Matches .btn-play sizing. */
+    .btn-apk {
+      display: inline-flex; align-items: center; gap: 10px; background: var(--teal); color: #0A0A0A;
+      font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 700; padding: 13px 22px;
+      border-radius: 10px; text-decoration: none; transition: opacity 0.15s, transform 0.15s, box-shadow 0.2s;
+    }
+    .btn-apk:hover { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 8px 30px rgba(0,229,200,0.25); }
+    .btn-apk svg { stroke: currentColor; fill: none; }
     .btn-ghost { font-size: 13px; color: var(--muted); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: color 0.15s; }
     .btn-ghost:hover { color: var(--text); }
     .btn-ghost svg { stroke: currentColor; fill: none; }
@@ -330,7 +342,7 @@
     <a class="nav-link" href="#intel">Intel &amp; Security</a>
     <a class="nav-link" href="#how">How it works</a>
     <a class="nav-link" href="https://github.com/naturalstate/ecliptic" target="_blank" rel="noopener">GitHub</a>
-    <a class="nav-cta" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank" rel="noopener">Download</a>
+    <a class="nav-cta" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener">Download</a>
   </div>
 </nav>
 
@@ -343,12 +355,17 @@
       Point Ecliptic at any URL and it detects the full stack: CMS, frameworks, analytics, CDN, APIs, then goes deeper into security-header analysis, subdomains, DNS &amp; email security, hosting intel and 1,500+ patterns. A real browser engine, entirely on-device. No account, no backend, no telemetry.
     </p>
     <div class="cta-group">
-      <a class="btn-play" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank" rel="noopener">
+      <a class="btn-apk" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener">
+        <svg width="17" height="17" viewBox="0 0 24 24" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Download APK
+      </a>
+      <span class="btn-play pending" role="button" aria-disabled="true" title="Not yet on Google Play — application in review">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
           <path d="M3.18 23.85c.36.2.77.26 1.16.17l12.55-11.55L13.6 9.22 3.18 23.85zM21.5 10.28l-3.07-1.75L14.8 12l3.63 3.47 3.07-1.75c.88-.5.88-2.94 0-3.44zM2.07 1.15C1.73 1.52 1.54 2.06 1.54 2.77v18.46c0 .71.19 1.25.53 1.62l.09.08 10.34-10.34v-.24L2.16 1.07l-.09.08zM13.6 14.78l3.29-3.29L4.34.15c-.39-.22-.83-.24-1.16-.06L13.6 14.78z"/>
         </svg>
-        Get it on Google Play
-      </a>
+        Google Play
+        <span class="pending-tag">In review</span>
+      </span>
       <a class="btn-ghost" href="https://github.com/naturalstate/ecliptic" target="_blank" rel="noopener">
         <svg width="15" height="15" viewBox="0 0 24 24" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
         View source
@@ -652,13 +669,20 @@
   <div class="cta-box reveal">
     <h2>Ready to scan?</h2>
     <p>Free download. No account. Works on any Android 8.0+ device.</p>
-    <a class="btn-play" href="https://play.google.com/store/apps/details?id=com.ecliptic" target="_blank" rel="noopener">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M3.18 23.85c.36.2.77.26 1.16.17l12.55-11.55L13.6 9.22 3.18 23.85zM21.5 10.28l-3.07-1.75L14.8 12l3.63 3.47 3.07-1.75c.88-.5.88-2.94 0-3.44zM2.07 1.15C1.73 1.52 1.54 2.06 1.54 2.77v18.46c0 .71.19 1.25.53 1.62l.09.08 10.34-10.34v-.24L2.16 1.07l-.09.08zM13.6 14.78l3.29-3.29L4.34.15c-.39-.22-.83-.24-1.16-.06L13.6 14.78z"/>
-      </svg>
-      Get it on Google Play
-    </a>
-    <span class="version-badge">v1.2.6 · build 48 · Android 8.0+ · <a class="footer-link" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener" style="color:var(--teal)">GitHub Releases</a></span>
+    <div class="cta-group" style="justify-content:center">
+      <a class="btn-apk" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener">
+        <svg width="17" height="17" viewBox="0 0 24 24" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Download APK
+      </a>
+      <span class="btn-play pending" role="button" aria-disabled="true" title="Not yet on Google Play — application in review">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M3.18 23.85c.36.2.77.26 1.16.17l12.55-11.55L13.6 9.22 3.18 23.85zM21.5 10.28l-3.07-1.75L14.8 12l3.63 3.47 3.07-1.75c.88-.5.88-2.94 0-3.44zM2.07 1.15C1.73 1.52 1.54 2.06 1.54 2.77v18.46c0 .71.19 1.25.53 1.62l.09.08 10.34-10.34v-.24L2.16 1.07l-.09.08zM13.6 14.78l3.29-3.29L4.34.15c-.39-.22-.83-.24-1.16-.06L13.6 14.78z"/>
+        </svg>
+        Google Play
+        <span class="pending-tag">In review</span>
+      </span>
+    </div>
+    <span class="version-badge">v1.2.7 · build 49 · Android 8.0+ · <a class="footer-link" href="https://github.com/naturalstate/ecliptic/releases" target="_blank" rel="noopener" style="color:var(--teal)">GitHub Releases</a></span>
   </div>
 </div>
 
