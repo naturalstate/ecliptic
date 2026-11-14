@@ -119,8 +119,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -349,6 +351,18 @@ private val TECH_ADMIN_PATHS: Map<String, List<String>> = mapOf(
     "SMF"            to listOf("/admin.php"),
 )
 
+/**
+ * App-wide actions available on any URL shown in the app. Provided once at the top of
+ * [PocScanScreen] via [LocalUrlActions] so every URL row (links, endpoints, requests,
+ * recon, strings, cookies…) can offer the same menu without prop-drilling callbacks.
+ */
+data class UrlActions(
+    val scanWith: (String) -> Unit,
+    val sendToRepeater: ((String) -> Unit)? = null,
+)
+
+val LocalUrlActions = compositionLocalOf<UrlActions?> { null }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PocScanScreen(
@@ -439,6 +453,21 @@ fun PocScanScreen(
         viewModel.scan(webView)
     }
 
+    // Start a brand-new scan of [raw] from anywhere a URL is shown. Keeps the current scan
+    // in history (scan() appends a snapshot). Foundation for connected multi-URL scans.
+    fun scanWith(raw: String) {
+        val u = raw.trim()
+        if (u.isBlank()) return
+        bottomTab = TAB_TECH
+        keyboard?.hide()
+        viewModel.scan(webView, forceUrl = if (u.startsWith("http", ignoreCase = true)) u else "https://$u")
+    }
+
+    val urlActions = UrlActions(
+        scanWith = { scanWith(it) },
+        sendToRepeater = { viewModel.prefillRepeater(it); bottomTab = TAB_REPEAT },
+    )
+
     fun paste() {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.let { viewModel.onUrlChanged(it) }
@@ -504,6 +533,7 @@ fun PocScanScreen(
         else       -> "empty"
     }
 
+    CompositionLocalProvider(LocalUrlActions provides urlActions) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -920,6 +950,7 @@ fun PocScanScreen(
     selectedTech?.let { tech ->
         TechDetailSheet(tech = tech, scanUrl = signals?.finalUrl ?: urlInput, onDismiss = { selectedTech = null })
     }
+    } // CompositionLocalProvider(LocalUrlActions)
 }
 
 // ─── Loading / empty ──────────────────────────────────────────────────────────
@@ -1350,26 +1381,28 @@ private fun TechDetailSheet(tech: Technology, scanUrl: String = "", onDismiss: (
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         adminPaths.forEach { path ->
                             val fullUrl = "$baseOrigin$path"
-                            Surface(
-                                modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri(fullUrl) } },
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(8.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            UrlMenuBox(fullUrl) {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(8.dp),
                                 ) {
-                                    Text(
-                                        path,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 12.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    Icon(Icons.Filled.OpenInBrowser, null, tint = accentColor, modifier = Modifier.size(14.dp))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(
+                                            path,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontSize = 12.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Icon(Icons.Filled.OpenInBrowser, null, tint = accentColor, modifier = Modifier.size(14.dp))
+                                    }
                                 }
                             }
                         }
@@ -2134,6 +2167,7 @@ private fun resolveApiUrl(endpoint: String, pageUrl: String): String = when {
 private fun ApiEndpointRow(endpoint: String, pageUrl: String, onViewSource: (String) -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val urlActions = LocalUrlActions.current
     var expanded by remember { mutableStateOf(false) }
     val abs = remember(endpoint, pageUrl) { resolveApiUrl(endpoint, pageUrl) }
     val httpish = abs.startsWith("http", ignoreCase = true)
@@ -2166,6 +2200,13 @@ private fun ApiEndpointRow(endpoint: String, pageUrl: String, onViewSource: (Str
                     leadingIcon = { Icon(Icons.Filled.Code, null, modifier = Modifier.size(16.dp)) },
                     onClick = { expanded = false; onViewSource(abs) },
                 )
+                if (urlActions != null) {
+                    DropdownMenuItem(
+                        text = { Text("Scan with Ecliptic") },
+                        leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(16.dp)) },
+                        onClick = { expanded = false; urlActions.scanWith(abs) },
+                    )
+                }
             }
         }
     }
@@ -2346,6 +2387,9 @@ private fun UrlActionRow(
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val urlActions = LocalUrlActions.current
+    // Prefer an explicit callback; otherwise fall back to the app-wide Repeater action.
+    val sendToRepeater = onSendToRepeater ?: urlActions?.sendToRepeater
     var expanded by remember { mutableStateOf(false) }
     Box {
         Text(
@@ -2370,11 +2414,63 @@ private fun UrlActionRow(
                     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                 },
             )
-            if (onSendToRepeater != null) {
+            if (urlActions != null) {
+                DropdownMenuItem(
+                    text = { Text("Scan with Ecliptic") },
+                    leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(16.dp)) },
+                    onClick = { expanded = false; urlActions.scanWith(url) },
+                )
+            }
+            if (sendToRepeater != null) {
                 DropdownMenuItem(
                     text = { Text("Send to Repeater") },
                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.Send, null, modifier = Modifier.size(16.dp)) },
-                    onClick = { expanded = false; onSendToRepeater(url) },
+                    onClick = { expanded = false; sendToRepeater(url) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Wraps arbitrary row [content] (host chips, link rows, list items) so tapping it opens the
+ * standard URL menu — Open in browser · Copy URL · Scan with Ecliptic — without changing the
+ * row's own layout. [url] may be bare (host) or absolute; it's normalized to https:// if needed.
+ */
+@Composable
+private fun UrlMenuBox(
+    url: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val urlActions = LocalUrlActions.current
+    val full = remember(url) { if (url.startsWith("http", ignoreCase = true)) url else "https://$url" }
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Box(Modifier.clickable { expanded = true }) { content() }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Open in browser") },
+                leadingIcon = { Icon(Icons.Filled.OpenInBrowser, null, modifier = Modifier.size(16.dp)) },
+                onClick = { expanded = false; runCatching { uriHandler.openUri(full) } },
+            )
+            DropdownMenuItem(
+                text = { Text("Copy URL") },
+                leadingIcon = { Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(16.dp)) },
+                onClick = {
+                    expanded = false
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("url", full))
+                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                },
+            )
+            if (urlActions != null) {
+                DropdownMenuItem(
+                    text = { Text("Scan with Ecliptic") },
+                    leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(16.dp)) },
+                    onClick = { expanded = false; urlActions.scanWith(full) },
                 )
             }
         }
@@ -2391,6 +2487,7 @@ private fun UrlActionRow(
 private fun FileViewerSheet(url: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val urlActions = LocalUrlActions.current
     val sheetState = rememberModalBottomSheetState()
     var content by remember(url) { mutableStateOf<String?>(null) }
     var zoom by remember { mutableStateOf(1f) }
@@ -2418,6 +2515,11 @@ private fun FileViewerSheet(url: String, onDismiss: () -> Unit) {
                     Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
                 }, modifier = Modifier.size(38.dp)) {
                     Icon(Icons.Filled.ContentCopy, "Copy URL", tint = Teal, modifier = Modifier.size(18.dp))
+                }
+                if (urlActions != null) {
+                    IconButton(onClick = { onDismiss(); urlActions.scanWith(url) }, modifier = Modifier.size(38.dp)) {
+                        Icon(Icons.Filled.Search, "Scan with Ecliptic", tint = Teal, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
             Text(url, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
@@ -3120,13 +3222,15 @@ private fun ReconContent(
         }
         items(subsUnion) { sub ->
             val isStaging = sub in stagingHostSet || com.ecliptic.scanner.looksLikeStaging(sub)
-            Surface(
-                modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri("https://$sub") } },
-                color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
-            ) {
-                Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(sub, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                    if (isStaging) Text("staging", color = Amber, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+            UrlMenuBox("https://$sub") {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(sub, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                        if (isStaging) Text("staging", color = Amber, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                    }
                 }
             }
         }
@@ -3176,12 +3280,14 @@ private fun ReconContent(
                         checked && hosts.isEmpty() -> Text("No staging hosts resolved.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         checked -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             hosts.forEach { h ->
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(h.host, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                                    if (h.source == "provider") {
-                                        Text("default", color = Amber, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                                UrlMenuBox("https://${h.host}") {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(h.host, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                        if (h.source == "provider") {
+                                            Text("default", color = Amber, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                                        }
+                                        h.ip?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace) }
                                     }
-                                    h.ip?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace) }
                                 }
                             }
                         }
@@ -3191,9 +3297,11 @@ private fun ReconContent(
                         Text("From subdomains:", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             stagingFromSubs.forEach { h ->
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(h, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                                    Text("subdomain", color = Teal, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                                UrlMenuBox("https://$h") {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(h, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                        Text("subdomain", color = Teal, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                                    }
                                 }
                             }
                         }
@@ -3327,11 +3435,13 @@ private fun ReconContent(
             item { Text("No A record to check", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
         }
         items(neighbors.take(60)) { n ->
-            Surface(
-                modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri("https://$n") } },
-                color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
-            ) {
-                Text(n, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            UrlMenuBox("https://$n") {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
+                ) {
+                    Text(n, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                }
             }
         }
         item { Spacer(Modifier.height(8.dp)) }
@@ -3344,13 +3454,15 @@ private fun ReconContent(
         } else {
             item { Text("Registered look-alike domains (possible typosquats):", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp)) }
             items(sims) { s ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri("https://${s.domain}") } },
-                    color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(s.domain, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        Icon(Icons.Filled.OpenInBrowser, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                UrlMenuBox("https://${s.domain}") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(6.dp),
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(s.domain, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                            Icon(Icons.Filled.OpenInBrowser, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                        }
                     }
                 }
             }
@@ -4276,8 +4388,9 @@ private fun NetworkContent(
         if (socialLinks.isNotEmpty()) {
             item { NetSectionHeader("SOCIAL LINKS", socialLinks.size, false) }
             items(socialLinks) { link ->
+                UrlMenuBox(link.url) {
                 Surface(
-                    modifier = Modifier.fillMaxWidth().clickable { runCatching { uriHandler.openUri(link.url) } },
+                    modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surface,
                     shape = RoundedCornerShape(8.dp),
                 ) {
@@ -4304,6 +4417,7 @@ private fun NetworkContent(
                         }
                         Icon(Icons.Filled.OpenInBrowser, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
+                }
                 }
             }
             item { Spacer(Modifier.height(8.dp)) }

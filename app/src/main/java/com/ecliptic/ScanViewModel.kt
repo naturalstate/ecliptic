@@ -635,10 +635,16 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun scan(webView: WebView) {
+    /**
+     * Run a scan. [forceUrl], when set, starts a fresh GET scan of that URL regardless of
+     * any Repeater/raw-request state — used by the app-wide "Scan with Ecliptic" action so
+     * tapping a link anywhere kicks off a new scan. The previous scan is kept in history
+     * (each scan appends a snapshot), so a new scan never destroys the current one.
+     */
+    fun scan(webView: WebView, forceUrl: String? = null) {
         if (_state.value.isScanning) return
 
-        val isRawMode = !_state.value.isRepeaterWizard
+        val isRawMode = forceUrl == null && !_state.value.isRepeaterWizard
         val rawText = _state.value.rawRequest
 
         val url: String
@@ -646,7 +652,15 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         val customHeaders: Map<String, String>
         val requestBody: String
 
-        if (isRawMode && rawText.isNotBlank()) {
+        if (forceUrl != null) {
+            url = forceUrl
+            method = "GET"
+            customHeaders = emptyMap()
+            requestBody = ""
+            _state.update {
+                it.copy(urlInput = url, httpMethod = "GET", rawRequest = "", isRepeaterWizard = false)
+            }
+        } else if (isRawMode && rawText.isNotBlank()) {
             val parsed = parseRawRequest(rawText, _state.value.urlInput.trim())
             url = parsed.url.ifBlank { _state.value.urlInput.trim() }
             method = parsed.method

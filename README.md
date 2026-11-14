@@ -298,6 +298,7 @@ Every scan is automatically saved to device storage and survives app restarts.
 ### 📋 Copy & Export
 
 - **Long-press any value**, select and copy any single-line value natively (headers, cookies, API endpoints, TLS fields, URLs, tech names), no per-field button clutter
+- **Tap any URL**, a consistent action menu on every URL in the app (API endpoints, Spider results, subdomains, staging hosts, nameserver neighbours, look-alike domains, social links, network requests, admin paths): Open in browser, Copy URL, View source (where applicable), and **Scan with Ecliptic**, start a fresh scan of that link while keeping the current scan in history
 - **Bulk copy**, copy buttons on data-heavy tabs copy the whole tab at once
 - **Export report**, tap the share icon in the header after any scan to export a full styled HTML report covering all findings
 
